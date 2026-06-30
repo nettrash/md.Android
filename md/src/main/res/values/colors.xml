@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adaptive launcher-icon background: the warm dark brown the "md"
+         app icon sits on. The foreground bitmap is the full app icon, so
+         this only shows at the rounded mask edges. -->
+    <color name="ic_launcher_background">#2E2118</color>
+</resources>
