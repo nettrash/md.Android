@@ -1,0 +1,48 @@
+md is a Markdown editor with the soul of a typewriter — warm paper, a serif face, and nothing between you and the text. Write on one side and watch the rendered page on the other, or go full-screen in either direction.
+
+It is the Android edition of the md editor for iPhone, iPad and Mac. All three share the same hand-written renderer, so a document looks the same on every screen you own.
+
+THREE LAYOUTS
+
+• Edit — a full-screen, distraction-free editor.
+• Split — editor and preview side by side, re-rendering live as you type. Offered on wide screens (tablets, unfolded foldables, landscape); it stacks when the window gets narrow.
+• Preview — just the rendered page.
+
+The segmented control in the app bar remembers your choice. A phone-width screen offers Edit and Preview; your remembered Split returns as soon as the window is wide again.
+
+YOUR FILES, ANYWHERE
+
+md is document-based, built on Android's Storage Access Framework:
+
+• Open, create and save .md / .markdown files in any location the system file picker can reach — device storage, SD card, or any cloud provider that plugs into it.
+• Plain-text files open and round-trip too.
+• "Open with md" from your file manager, or share text into md from any app.
+• Your work is saved automatically when you leave the app.
+
+THE MARKDOWN YOU ACTUALLY WRITE
+
+The built-in renderer covers everyday Markdown:
+
+• Headings (# through ######)
+• Bold, italic, inline code, links and strikethrough
+• Bullet, numbered and task lists (- [ ] / - [x]), with nesting
+• Fenced code blocks (``` and ~~~), horizontally scrollable
+• Block quotes, including nested ones
+• GitHub-style tables with column alignment
+• Thematic breaks
+
+PRINT & PDF
+
+Print the rendered document through the system print dialog — its "Save as PDF" target exports a themed PDF that matches light or dark mode. Or share the raw Markdown source through the share sheet.
+
+TYPEWRITER FEEL
+
+Warm paper backgrounds — "fresh paper" in light mode, "carbon paper" in dark — with a serif prose face, a monospace code face, and a warm-amber accent.
+
+PRIVATE BY DESIGN
+
+md requests ZERO permissions and does not even declare the INTERNET permission — the app is technically incapable of sending anything anywhere. Your documents are read and written only through the system file picker and live wherever you keep them. No accounts, no telemetry, no advertising SDKs, no trackers, no third-party libraries.
+
+The full privacy policy is at https://nettrash.me/play/md/privacy.html.
+
+Free, ad-free, tracker-free.

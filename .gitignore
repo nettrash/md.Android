@@ -23,9 +23,13 @@ misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
 
-# Keystore files
+# Keystore files (never commit signing material)
 *.jks
 *.keystore
+keystore.properties
+
+# Play Console service-account JSON for the release workflow
+play-service-account.json
 
 # Google Services (e.g. APIs or Firebase)
 google-services.json
