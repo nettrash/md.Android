@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The `versionCode` is auto-incremented on every build by a Gradle finalizer
 (mirroring the iOS app's `agvtool bump`) and is not tracked here.
 
-## [1.0] — 2026-06-30
+## [1.0] — 2026-07-02
 
 ### Added
 
@@ -28,8 +28,13 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
   lists (with nesting), fenced code blocks (``` and `~~~`), block quotes
   (nested), GitHub tables with column alignment, and thematic breaks.
 - Edit / Split / Preview layout switch as a segmented control in the app
-  bar; Split renders editor and preview side by side (stacking on a narrow
-  screen) and re-renders live as you type. The layout is remembered.
+  bar, width-adaptive like iOS: a wide window (tablet, unfolded foldable,
+  desktop, or large phone in landscape) offers all three modes — Split
+  showing editor and preview side by side and re-rendering live as you type
+  (stacking when the Split window itself is narrow) — while a phone-width
+  window offers just Edit and Preview, since Split needs horizontal room. The
+  layout is remembered, and a remembered Split reappears when the window
+  widens again.
 - **Typewriter theme.** Warm paper background — "fresh paper" in light
   mode, "carbon paper" in dark — with a serif prose face and a monospace
   code face (Android's stand-ins for American Typewriter / Courier New),
@@ -38,8 +43,12 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
   WebView + Android's PrintManager (the system dialog's "Save as PDF"
   target exports a themed PDF matching light / dark); share the raw
   Markdown source through the system share sheet. No network access.
-- Adaptive launcher icon derived from the app icon.
-- Unit tests (38 cases) covering the Markdown parser and the
-  `MarkdownHtml` export — including regression coverage for setext
-  headings, wrapped list items, `C#`-style headings, tab-indented lists
-  and bounded block-quote nesting — run on the JVM with `./gradlew test`.
+- Adaptive launcher icon: a transparent cream "md" glyph (American
+  Typewriter Bold, matching the iOS / macOS icon) sized inside the adaptive
+  safe zone, over a diagonal warm-brown gradient background — supplied at
+  xhdpi / xxhdpi / xxxhdpi.
+- Unit tests (46 cases) covering the Markdown parser, the
+  `MarkdownHtml` export, and the width-adaptive layout rule — including
+  regression coverage for setext headings, wrapped list items, `C#`-style
+  headings, tab-indented lists and bounded block-quote nesting — run on the
+  JVM with `./gradlew test`.

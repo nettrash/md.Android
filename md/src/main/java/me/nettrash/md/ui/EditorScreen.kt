@@ -3,10 +3,14 @@
  * md (Android)
  *
  * The content of the editor window: a raw-Markdown editor and a live
- * rendered preview, with a mode switch in the app bar. On a wide window a
- * Split mode shows them side by side and the preview re-renders as you
- * type; on a narrow window the panes stack. The chosen mode is remembered
- * across configuration changes. Mirrors the iOS `DocumentView.swift`.
+ * rendered preview, with a mode switch in the app bar. The available modes
+ * adapt to the window width (see `ViewMode.kt`): a wide window — tablet,
+ * unfolded foldable, desktop, large phone in landscape — offers Edit, Split
+ * and Preview, with Split showing the two panes side by side and re-rendering
+ * as you type (side by side when there's room, stacked when the Split window
+ * itself is narrow); a phone-width window offers only Edit and Preview, like
+ * iPhone. The chosen mode is remembered across configuration changes. Mirrors
+ * the iOS `DocumentView.swift`.
  *
  * Documents are opened, created and saved through the Storage Access
  * Framework (Android's document architecture). Save writes back to the
@@ -64,6 +68,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -76,14 +81,19 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import me.nettrash.md.DocumentViewModel
 
-private enum class Mode { EDIT, SPLIT, PREVIEW }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(viewModel: DocumentViewModel) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
+    // Which modes to offer depends on the current window width; Split is only
+    // shown when there's room for it (see `ViewMode.kt`). `mode` holds the raw
+    // preference and survives configuration changes; `effectiveMode` coerces
+    // it to fit the current width without discarding it, so Split returns when
+    // the window widens again.
+    val isWide = isWideLayout(LocalConfiguration.current.screenWidthDp)
     var mode by rememberSaveable { mutableStateOf(Mode.SPLIT) }
+    val currentMode = effectiveMode(mode, isWide)
     var menuOpen by remember { mutableStateOf(false) }
 
     val openLauncher = rememberLauncherForActivityResult(
@@ -146,7 +156,7 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                     )
                 },
                 actions = {
-                    ModeSwitch(mode) { mode = it }
+                    ModeSwitch(availableModes(isWide), currentMode) { mode = it }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "More")
@@ -181,20 +191,19 @@ fun EditorScreen(viewModel: DocumentViewModel) {
             )
         },
     ) { padding ->
-        Content(viewModel, mode, Modifier.padding(padding))
+        Content(viewModel, currentMode, Modifier.padding(padding))
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModeSwitch(mode: Mode, onChange: (Mode) -> Unit) {
+private fun ModeSwitch(modes: List<Mode>, selected: Mode, onChange: (Mode) -> Unit) {
     SingleChoiceSegmentedButtonRow {
-        val items = Mode.entries.toList()
-        items.forEachIndexed { index, m ->
+        modes.forEachIndexed { index, m ->
             SegmentedButton(
-                selected = mode == m,
+                selected = selected == m,
                 onClick = { onChange(m) },
-                shape = SegmentedButtonDefaults.itemShape(index, items.size),
+                shape = SegmentedButtonDefaults.itemShape(index, modes.size),
                 icon = {},
             ) {
                 Icon(
