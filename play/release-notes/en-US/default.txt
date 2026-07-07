@@ -1,0 +1,5 @@
+md 1.1 — diagrams and math in the preview.
+
+• Render LaTeX/TeX math ($…$ and $$…$$), Mermaid graphs (```mermaid) and PlantUML diagrams (```plantuml), just like GitHub.
+• Everything renders on-device from bundled engines — still no network, no accounts, and zero permissions (not even INTERNET).
+• The same rendering flows through to Print / Save as PDF.

@@ -296,4 +296,65 @@ class MarkdownParserTest {
         assertTrue(dark.contains("color-scheme: dark"))
         assertTrue(dark.contains("print-color-adjust: exact"))
     }
+
+    // Rich blocks — math / Mermaid / PlantUML (v1.1)
+
+    @Test fun htmlMermaidBlockEmitsContainer() {
+        val html = MarkdownHtml.document("```mermaid\ngraph TD\nA-->B\n```", "t", dark = false)
+        assertTrue(html.contains("<pre class=\"mermaid\">"))
+        assertTrue(html.contains("graph TD"))
+        assertFalse(html.contains("<pre><code>graph TD"))
+        assertTrue(html.contains("mermaid.min.js"))
+        assertFalse(html.contains("katex.min.js"))
+        assertFalse(html.contains("viz-global.js"))
+    }
+
+    @Test fun htmlPlantumlBlockEmitsContainer() {
+        val html = MarkdownHtml.document("```plantuml\n@startuml\nA->B\n@enduml\n```", "t", dark = false)
+        assertTrue(html.contains("<div class=\"plantuml\">"))
+        assertTrue(html.contains("@startuml"))
+        assertTrue(html.contains("viz-global.js"))
+    }
+
+    @Test fun htmlMathFenceEmitsDisplayMath() {
+        val html = MarkdownHtml.document("```math\n\\int_0^1 x\\,dx\n```", "t", dark = false)
+        assertTrue(html.contains("class=\"md-mathd\""))
+        assertTrue(html.contains("\\int_0^1"))
+        assertTrue(html.contains("katex.min.js"))
+    }
+
+    @Test fun htmlInlineMathIsNotMangledByEmphasis() {
+        // A `*` inside inline math must stay literal, not become <em>.
+        val html = MarkdownHtml.document("total \$a*b*c\$ units", "t", dark = false)
+        assertTrue(html.contains("class=\"md-mathi\""))
+        assertTrue(html.contains("a*b*c"))
+        assertFalse(html.contains("<em>"))
+        assertTrue(html.contains("katex.min.js"))
+    }
+
+    @Test fun htmlDisplayMathSpanPreserved() {
+        val html = MarkdownHtml.document("\$\$x^2 + y^2\$\$", "t", dark = false)
+        assertTrue(html.contains("class=\"md-mathd\""))
+        assertTrue(html.contains("x^2 + y^2"))
+    }
+
+    @Test fun htmlCurrencyDollarsAreNotMath() {
+        val html = MarkdownHtml.document("it costs \$5 and \$10 today", "t", dark = false)
+        assertTrue(html.contains("\$5 and \$10"))
+        assertFalse(html.contains("class=\"md-mathi\""))
+        assertFalse(html.contains("katex.min.js"))
+    }
+
+    @Test fun htmlPlainDocumentStaysLight() {
+        val html = MarkdownHtml.document("# Just text\n\nA paragraph.", "t", dark = false)
+        assertFalse(html.contains("katex.min.js"))
+        assertFalse(html.contains("mermaid.min.js"))
+        assertFalse(html.contains("viz-global.js"))
+        assertTrue(html.contains("rich/md-init.js"))
+    }
+
+    @Test fun htmlCodeSpanDollarIsNotMath() {
+        val html = MarkdownHtml.document("use `\$x\$` here", "t", dark = false)
+        assertTrue(html.contains("<code>\$x\$</code>"))
+    }
 }

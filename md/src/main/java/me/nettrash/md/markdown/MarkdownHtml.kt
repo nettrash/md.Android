@@ -17,9 +17,46 @@ import java.util.Locale
 
 object MarkdownHtml {
 
-    /** A full HTML document for `source`, themed light or dark. */
+    /**
+     * A full HTML document for `source`, themed light or dark.
+     *
+     * Rich renderers (KaTeX math, Mermaid, PlantUML) load entirely from bundled
+     * assets under `rich/` — no network. Each heavy engine is pulled in only
+     * when the document uses it (PlantUML alone is 7 MB): the KaTeX / Mermaid /
+     * Viz scripts are included conditionally here, and `md-init.js` dynamically
+     * imports the PlantUML engine only when a `.plantuml` block exists.
+     * `md-init.js` itself is tiny and always runs; when it finishes it flags
+     * `data-md-render-complete` (which the print / PDF path waits on).
+     *
+     * The WebView must load this from an origin that serves `rich/` (see
+     * RichWebView) so `md-init.js`'s ES-module import resolves — offline.
+     */
     fun document(source: String, title: String, dark: Boolean): String {
-        val body = MarkdownParser.parse(source).joinToString("\n") { renderBlock(it) }
+        val blocks = MarkdownParser.parse(source)
+        val body = blocks.joinToString("\n") { renderBlock(it) }
+
+        val langs = blocks.filterIsInstance<MarkdownBlock.CodeBlock>()
+            .mapNotNull { it.language?.lowercase(Locale.ROOT) }.toSet()
+        val needsMermaid = "mermaid" in langs
+        val needsPlantuml = langs.any { it == "plantuml" || it == "puml" || it == "plant-uml" }
+        // Math is needed iff inline() actually emitted a math span — which it
+        // only does for real formulas, never for currency like "$5". Keying off
+        // the produced markup (not a raw "$" heuristic) means prose with stray
+        // dollar signs never even loads KaTeX.
+        val needsMath = body.contains("md-mathi") || body.contains("md-mathd")
+
+        val head = StringBuilder()
+        if (needsMath) {
+            head.append(
+                """
+                <link rel="stylesheet" href="rich/katex.min.css">
+                <script defer src="rich/katex.min.js"></script>
+                """.trimIndent()
+            )
+        }
+        if (needsMermaid) head.append("\n<script src=\"rich/mermaid.min.js\"></script>")
+        if (needsPlantuml) head.append("\n<script src=\"rich/viz-global.js\"></script>")
+
         return """
             <!DOCTYPE html>
             <html lang="en">
@@ -28,9 +65,11 @@ object MarkdownHtml {
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>${escape(title)}</title>
             <style>${css(dark)}</style>
+            $head
             </head>
-            <body>
+            <body data-md-dark="${if (dark) "1" else "0"}">
             $body
+            <script type="module" src="rich/md-init.js"></script>
             </body>
             </html>
         """.trimIndent()
@@ -41,9 +80,19 @@ object MarkdownHtml {
     private fun renderBlock(block: MarkdownBlock): String = when (block) {
         is MarkdownBlock.Heading -> "<h${block.level}>${inline(block.text)}</h${block.level}>"
         is MarkdownBlock.Paragraph ->
-            "<p>${inline(block.text).replace("\n", "<br>\n")}</p>"
+            // Soft breaks are inserted inside `inline` (before protected math /
+            // code spans are restored) so a multi-line display-math span keeps
+            // its own internal newlines instead of getting <br>s injected.
+            "<p>${inline(block.text, softBreaks = true)}</p>"
         is MarkdownBlock.ListBlock -> renderList(block.items, block.ordered)
-        is MarkdownBlock.CodeBlock -> "<pre><code>${escape(block.code)}</code></pre>"
+        // A fenced block's info string selects a rich renderer; md-init.js turns
+        // these containers into diagrams / formulas in the WebView.
+        is MarkdownBlock.CodeBlock -> when (block.language?.lowercase(Locale.ROOT)) {
+            "mermaid" -> "<pre class=\"mermaid\">${escape(block.code)}</pre>"
+            "plantuml", "puml", "plant-uml" -> "<div class=\"plantuml\">${escape(block.code)}</div>"
+            "math", "latex", "tex" -> "<div class=\"md-mathd\">${escape(block.code)}</div>"
+            else -> "<pre><code>${escape(block.code)}</code></pre>"
+        }
         is MarkdownBlock.Quote ->
             "<blockquote>\n${block.blocks.joinToString("\n") { renderBlock(it) }}\n</blockquote>"
         is MarkdownBlock.Table -> renderTable(block.header, block.alignments, block.rows)
@@ -97,21 +146,32 @@ object MarkdownHtml {
 
     // MARK: - Inline
 
-    /** Convert a block's inline Markdown to HTML. Code spans are lifted out
-     *  first (literal), the remainder is HTML-escaped, span syntax is
-     *  converted, then the code spans are restored. */
-    private fun inline(text: String): String {
-        val codeSpans = ArrayList<String>()
+    /** Convert a block's inline Markdown to HTML. Code spans and math spans are
+     *  lifted out first — their content is literal and must not be re-interpreted
+     *  by the span-syntax pass — then the remainder is HTML-escaped, span syntax
+     *  is converted, optional soft breaks are inserted, and finally the protected
+     *  spans are restored. Math is emitted as explicit `.md-mathi` / `.md-mathd`
+     *  spans (rendered by md-init.js with KaTeX), so this pass — not a browser
+     *  delimiter scan — decides what is a formula. Content is escaped, but KaTeX
+     *  reads the decoded textContent so `<`, `>`, `&` in a formula are fine. */
+    private fun inline(text: String, softBreaks: Boolean = false): String {
+        val protectedSpans = ArrayList<String>()
         var working = text
 
-        // 1. Extract `code spans`, replacing each with a private-use token.
-        working = Regex("`([^`]+)`").replace(working) { m ->
-            val index = codeSpans.size
-            codeSpans.add("<code>${escape(m.groupValues[1])}</code>")
-            token(index)
-        }
+        // 1. Protect, in order: code spans, then display math ($$…$$, \[…\]),
+        //    then inline math ($…$, \(…\)). Code wins over math, so `$x$` inside
+        //    backticks stays literal code. The inline `$…$` form carries a
+        //    currency guard so "$5 and $10" is left as prose.
+        working = protect("`([^`]+)`", working, protectedSpans) { "<code>${escape(it)}</code>" }
+        working = protect("""\${'$'}\${'$'}([\s\S]+?)\${'$'}\${'$'}""", working, protectedSpans) { mathSpan(it, display = true) }
+        working = protect("""\\\[([\s\S]+?)\\\]""", working, protectedSpans) { mathSpan(it, display = true) }
+        working = protect(
+            """(?<![\w${'$'}])\${'$'}([^${'$'}\n]+?)\${'$'}(?![\w${'$'}])""",
+            working, protectedSpans,
+        ) { mathSpan(it, display = false) }
+        working = protect("""\\\(([^\n]+?)\\\)""", working, protectedSpans) { mathSpan(it, display = false) }
 
-        // 2. Escape the literal text (tokens are private-use chars, untouched).
+        // 2. Escape the literal text (protection tokens are private-use, untouched).
         working = escape(working)
 
         // 3. Span syntax → tags. Links first; bold before italic so `**` wins.
@@ -123,19 +183,47 @@ object MarkdownHtml {
         // Underscore italic only at word boundaries, so snake_case survives.
         working = replace("(?<![\\w])_([^_]+)_(?![\\w])", "<em>$1</em>", working)
 
-        // 4. Restore code spans.
-        for ((index, html) in codeSpans.withIndex()) {
+        // 4. Soft line breaks (paragraphs only), before restoring protected spans
+        //    so a multi-line display-math span keeps its own internal newlines.
+        if (softBreaks) working = working.replace("\n", "<br>\n")
+
+        // 5. Restore protected spans.
+        for ((index, html) in protectedSpans.withIndex()) {
             working = working.replace(token(index), html)
         }
         return working
     }
 
+    /** Replace every match of `pattern` (group 1) with a unique private-use
+     *  token, appending `transform(group1)` to `store`. */
+    private fun protect(
+        pattern: String,
+        text: String,
+        store: ArrayList<String>,
+        transform: (String) -> String,
+    ): String = runCatching {
+        Regex(pattern).replace(text) { m ->
+            val index = store.size
+            store.add(transform(m.groupValues[1]))
+            token(index)
+        }
+    }.getOrDefault(text)
+
     private fun token(index: Int): String = "$index"
 
+    /** A KaTeX target element for [latex]: `.md-mathi` inline, `.md-mathd`
+     *  display. The LaTeX is HTML-escaped, but KaTeX reads the decoded
+     *  textContent so escaped `<`, `>`, `&` in the formula are fine. */
+    private fun mathSpan(latex: String, display: Boolean): String =
+        "<span class=\"md-math${if (display) "d" else "i"}\">${escape(latex)}</span>"
+
+    // `"` is escaped too so a link URL (which lands in a double-quoted href
+    // attribute) can't break out and inject attributes into the WebView.
     private fun escape(s: String): String = s
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
+        .replace("\"", "&quot;")
 
     private fun replace(pattern: String, template: String, s: String): String =
         runCatching { s.replace(Regex(pattern), template) }.getOrDefault(s)
@@ -187,6 +275,15 @@ object MarkdownHtml {
             .md-item { display: flex; gap: 0.5em; margin: 0.22em 0; }
             .md-marker { color: $muted; min-width: 1.5em; text-align: right; }
             .md-item.done { color: $muted; text-decoration: line-through; }
+            /* Rich blocks: diagrams and formulas render as SVG/markup, not code —
+               drop the code-block chrome, centre them, and let them scroll if wide. */
+            .mermaid, .plantuml, .md-mathd {
+                background: none; padding: 6px 0; margin: 0 0 0.9em;
+                overflow-x: auto; text-align: center;
+            }
+            .mermaid svg, .plantuml svg { max-width: 100%; height: auto; }
+            .md-mathd .katex-display { margin: 0; }
+            .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
         """.trimIndent()
     }
 }

@@ -280,14 +280,14 @@ private fun EditorPane(viewModel: DocumentViewModel, modifier: Modifier) {
 
 @Composable
 private fun PreviewPane(viewModel: DocumentViewModel, modifier: Modifier) {
-    Column(
-        modifier
-            .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-    ) {
-        MarkdownView(viewModel.text, Modifier.widthIn(max = 760.dp).fillMaxWidth())
-    }
+    // The rendered preview is a WebView showing the same themed HTML as
+    // Print / Save-as-PDF, so LaTeX math, Mermaid and PlantUML render (offline).
+    // It scrolls and lays out internally (see the CSS in MarkdownHtml).
+    RichPreview(
+        text = viewModel.text,
+        title = viewModel.displayName,
+        modifier = modifier.fillMaxSize(),
+    )
 }
 
 private fun suggestedFileName(displayName: String): String {
