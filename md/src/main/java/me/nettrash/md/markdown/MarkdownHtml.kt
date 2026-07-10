@@ -30,10 +30,28 @@ object MarkdownHtml {
      *
      * The WebView must load this from an origin that serves `rich/` (see
      * RichWebView) so `md-init.js`'s ES-module import resolves — offline.
+     *
+     * [export] styles the document for paper / PDF instead of the live
+     * preview: a smaller, print-typical body size (everything else is
+     * em-based and scales with it), and code blocks wrap long lines —
+     * paper can't scroll, so an overflowing line would be clipped at the
+     * block's edge.
      */
-    fun document(source: String, title: String, dark: Boolean): String {
+    fun document(source: String, title: String, dark: Boolean, export: Boolean = false): String {
         val blocks = MarkdownParser.parse(source)
-        val body = blocks.joinToString("\n") { renderBlock(it) }
+        // Top-level headings carry a GitHub-style anchor id, so `[…](#slug)`
+        // links navigate and the table of contents can scroll the preview.
+        // The slugs come from the same `MarkdownParser.slug` the TOC uses,
+        // so the two always agree.
+        val slugs = HashMap<String, Int>()
+        val body = blocks.joinToString("\n") { block ->
+            if (block is MarkdownBlock.Heading) {
+                val id = MarkdownParser.slug(block.text, slugs)
+                "<h${block.level} id=\"$id\">${inline(block.text)}</h${block.level}>"
+            } else {
+                renderBlock(block)
+            }
+        }
 
         val langs = blocks.filterIsInstance<MarkdownBlock.CodeBlock>()
             .mapNotNull { it.language?.lowercase(Locale.ROOT) }.toSet()
@@ -64,7 +82,7 @@ object MarkdownHtml {
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>${escape(title)}</title>
-            <style>${css(dark)}</style>
+            <style>${css(dark, export)}</style>
             $head
             </head>
             <body data-md-dark="${if (dark) "1" else "0"}">
@@ -97,6 +115,12 @@ object MarkdownHtml {
             "<blockquote>\n${block.blocks.joinToString("\n") { renderBlock(it) }}\n</blockquote>"
         is MarkdownBlock.Table -> renderTable(block.header, block.alignments, block.rows)
         MarkdownBlock.ThematicBreak -> "<hr>"
+        // In the preview a subtle dashed rule; in export / print it becomes
+        // a real page boundary (see the CSS).
+        MarkdownBlock.PageBreak -> "<div class=\"md-pagebreak\"></div>"
+        // Private author notes never reach the rendered document — they
+        // live in the editor and the notes panel only.
+        is MarkdownBlock.Note -> ""
     }
 
     private fun renderList(items: List<ListItem>, ordered: Boolean): String {
@@ -174,7 +198,20 @@ object MarkdownHtml {
         // 2. Escape the literal text (protection tokens are private-use, untouched).
         working = escape(working)
 
-        // 3. Span syntax → tags. Links first; bold before italic so `**` wins.
+        // 3. Span syntax → tags. Images before links (image syntax is link
+        //    syntax with a leading `!`, so the link pass would eat it), links
+        //    before emphasis, bold before italic so `**` wins. The text is
+        //    already escaped, so an optional source title reads `&quot;…&quot;`
+        //    here and attribute values can't break out of their quotes.
+        working = replace(
+            "!\\[([^\\]]*)\\]\\(([^)\\s]+)\\s+&quot;(.*?)&quot;\\)",
+            "<img src=\"$2\" alt=\"$1\" title=\"$3\">", working,
+        )
+        working = replace("!\\[([^\\]]*)\\]\\(([^)\\s]+)\\)", "<img src=\"$2\" alt=\"$1\">", working)
+        working = replace(
+            "\\[([^\\]]+)\\]\\(([^)\\s]+)\\s+&quot;(.*?)&quot;\\)",
+            "<a href=\"$2\" title=\"$3\">$1</a>", working,
+        )
         working = replace("\\[([^\\]]+)\\]\\(([^)\\s]+)\\)", "<a href=\"$2\">$1</a>", working)
         working = replace("\\*\\*([^*]+)\\*\\*", "<strong>$1</strong>", working)
         working = replace("__([^_]+)__", "<strong>$1</strong>", working)
@@ -230,7 +267,7 @@ object MarkdownHtml {
 
     // MARK: - CSS
 
-    private fun css(dark: Boolean): String {
+    private fun css(dark: Boolean, export: Boolean): String {
         val paper = if (dark) "#241E18" else "#F4EFE2"
         val ink = if (dark) "#E7DBC2" else "#2B2620"
         val secondary = if (dark) "#2F2820" else "#EAE2CF"
@@ -247,7 +284,7 @@ object MarkdownHtml {
             body {
                 color: $ink;
                 font-family: Georgia, "Times New Roman", serif;
-                font-size: 13pt;
+                font-size: ${if (export) 11 else 13}pt;
                 line-height: 1.55;
                 margin: 0;
                 padding: 48px 56px;
@@ -265,9 +302,17 @@ object MarkdownHtml {
             code, pre { font-family: "Courier New", monospace; }
             code { background: $secondary; padding: 0.1em 0.3em; border-radius: 4px; font-size: 0.92em; }
             pre { background: $secondary; padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+            /* In export, code wraps: paper can't scroll a too-wide block, so a
+               long line would otherwise be clipped at the block's edge. */
+            ${if (export) "pre { white-space: pre-wrap; overflow-wrap: anywhere; }" else ""}
             pre code { background: none; padding: 0; font-size: 0.92em; }
             blockquote { margin: 0 0 0.9em; padding-left: 14px; border-left: 4px solid $accent; color: $muted; }
             hr { border: none; border-top: 1px solid $border; margin: 1.4em 0; }
+            /* The author's `\newpage`: a dashed rule on screen; in export / print
+               it collapses to an invisible marker where a new page starts (the
+               PDF capture splits pages at it, and paginated printing breaks). */
+            ${if (export) ".md-pagebreak { height: 0; margin: 0; break-after: page; }"
+              else ".md-pagebreak { border-top: 2px dashed $border; margin: 1.6em 0; }"}
             table { border-collapse: collapse; margin: 0 0 0.9em; }
             th, td { border: 1px solid $border; padding: 6px 12px; }
             th { background: $secondary; }
@@ -282,6 +327,9 @@ object MarkdownHtml {
                 overflow-x: auto; text-align: center;
             }
             .mermaid svg, .plantuml svg { max-width: 100%; height: auto; }
+            /* Images render at their natural size, only capped to the page width;
+               height follows so the aspect ratio never distorts. */
+            img { max-width: 100%; height: auto; }
             .md-mathd .katex-display { margin: 0; }
             .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
         """.trimIndent()

@@ -89,13 +89,32 @@ open class MdAssetWebViewClient(
 }
 
 /**
+ * A one-shot request to scroll the preview to a heading anchor. `slug` is the
+ * heading's `id` in the rendered HTML (`MarkdownParser.slug`); `id` makes each
+ * request distinct so tapping the same table-of-contents entry twice scrolls
+ * twice — [RichPreview] acts once per unseen `id`.
+ */
+data class PreviewNavigation(val id: Long, val slug: String)
+
+/**
  * The preview WebView. Loads immediately, then debounces reloads on text/theme
  * change so live typing in Split mode doesn't reload (and re-run the diagram
  * engines) on every keystroke. Scroll position is preserved across reloads.
+ *
+ * [navigation] scrolls the page to a heading (the table of contents drives
+ * it). When it arrives before the page has finished loading — the TOC tap
+ * that just switched the mode to Preview lands on a WebView still parsing —
+ * the scroll is parked and performed in `onPageFinished`, the same hook that
+ * restores the reload scroll position.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun RichPreview(text: String, title: String, modifier: Modifier = Modifier) {
+fun RichPreview(
+    text: String,
+    title: String,
+    modifier: Modifier = Modifier,
+    navigation: PreviewNavigation? = null,
+) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     val state = remember { PreviewState() }
@@ -104,13 +123,11 @@ fun RichPreview(text: String, title: String, modifier: Modifier = Modifier) {
         modifier = modifier,
         factory = { ctx ->
             WebView(ctx).apply {
-                settings.javaScriptEnabled = true            // local, bundled content only
+                settings.javaScriptEnabled = true            // bundled engines; net = doc images only
                 setBackgroundColor(Color.TRANSPARENT)        // let the CSS paper show
                 webViewClient = object : MdAssetWebViewClient(ctx.assets, { state.html }) {
                     override fun onPageFinished(view: WebView, url: String?) {
-                        if (state.savedScrollY > 0) {
-                            view.evaluateJavascript("window.scrollTo(0, ${state.savedScrollY})", null)
-                        }
+                        state.onPageFinished(view)
                     }
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val target = request.url
@@ -130,6 +147,7 @@ fun RichPreview(text: String, title: String, modifier: Modifier = Modifier) {
         },
         update = { webView ->
             state.render(webView, MarkdownHtml.document(text, title, dark))
+            navigation?.let { state.navigate(webView, it) }
         },
         // Destroy the WebView when the preview leaves composition, so it (and
         // the Activity context it holds) isn't leaked across Preview/Split toggles.
@@ -139,8 +157,19 @@ fun RichPreview(text: String, title: String, modifier: Modifier = Modifier) {
 
 private class PreviewState {
     @Volatile var html: String = ""
-    var savedScrollY = 0
+    private var savedScrollY = 0
+    /** True once `onPageFinished` has fired — anchors exist to scroll to. */
+    private var pageReady = false
+    /** True from the moment a debounced reload is scheduled until its
+     *  `onPageFinished` — the visible DOM is stale (or about to be torn
+     *  down), so navigations must not run against it. */
+    private var reloadPending = false
+    /** Anchor waiting for `onPageFinished`: a navigation that arrived while
+     *  the page was loading or a debounced reload was pending. Survives the
+     *  `reload()` itself — it's only consumed once the new DOM is up. */
+    private var pendingSlug: String? = null
     private var loaded = false
+    private var lastNavigationId = 0L
     private val handler = Handler(Looper.getMainLooper())
     private var pending: Runnable? = null
 
@@ -152,6 +181,7 @@ private class PreviewState {
             loaded = true
             webView.loadUrl(MdAssetWebViewClient.INDEX_URL)
         } else {
+            reloadPending = true
             val work = Runnable {
                 webView.evaluateJavascript("window.scrollY") { value ->
                     savedScrollY = value?.toFloatOrNull()?.toInt() ?: 0
@@ -162,4 +192,42 @@ private class PreviewState {
             handler.postDelayed(work, 350)
         }
     }
+
+    /** Scroll to [navigation]'s anchor, once per `id`. Runs immediately only
+     *  against a settled DOM — during the initial load *and* while a
+     *  debounced reload is pending or in flight the anchor lookup would hit
+     *  the old (or absent) document, so the request is parked for
+     *  [onPageFinished] instead. A fresh WebView (the preview pane was just
+     *  recreated by a mode switch) replays the latest request — deliberate:
+     *  the recreated pane starts at the top anyway, so reopening at the
+     *  last-navigated heading is strictly better. */
+    fun navigate(webView: WebView, navigation: PreviewNavigation) {
+        if (navigation.id == lastNavigationId) return
+        lastNavigationId = navigation.id
+        if (pageReady && !reloadPending) scrollToAnchor(webView, navigation.slug)
+        else pendingSlug = navigation.slug
+    }
+
+    /** The page (initial load or reload) is up: restore the reload scroll
+     *  position, then run any parked navigation — after the restore, so the
+     *  anchor wins. */
+    fun onPageFinished(view: WebView) {
+        pageReady = true
+        reloadPending = false
+        if (savedScrollY > 0) {
+            view.evaluateJavascript("window.scrollTo(0, $savedScrollY)", null)
+        }
+        pendingSlug?.let { slug ->
+            pendingSlug = null
+            scrollToAnchor(view, slug)
+        }
+    }
+}
+
+/** Scroll the page so the element with id [slug] is at the top. Slugs keep
+ *  only letters, digits, "-" and "_" (see `MarkdownParser.slug`) — no quote,
+ *  backslash or other JS metacharacter survives — so interpolating one into
+ *  the script cannot break out of the string literal. */
+private fun scrollToAnchor(webView: WebView, slug: String) {
+    webView.evaluateJavascript("document.getElementById('$slug')?.scrollIntoView(true)", null)
 }

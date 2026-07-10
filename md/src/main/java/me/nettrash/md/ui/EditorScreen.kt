@@ -17,14 +17,25 @@
  * current URI; when there's nowhere writable yet it falls through to a
  * Create Document ("Save As") picker. The buffer is also flushed when the
  * app is backgrounded, approximating the iOS autosave.
+ *
+ * The app bar also carries the document's structure and the writer tools:
+ * a table-of-contents action that scrolls the preview to a heading, a
+ * Notes… panel listing the private `<!-- note: … -->` comments, an
+ * Examples menu that opens a bundled sample document as a new untitled
+ * buffer (with an Example Book… action that copies the bundled sample
+ * book into a picked folder), and the book navigator (New Book… /
+ * Open Book… / Show Book / Close Book) over a user-picked folder tree —
+ * see `BookSheet.kt` and `book/Book.kt`.
  */
 
 package me.nettrash.md.ui
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,10 +52,12 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Splitscreen
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,11 +65,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -64,8 +79,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
@@ -79,7 +96,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.nettrash.md.DocumentViewModel
+import me.nettrash.md.book.BookState
+import me.nettrash.md.markdown.MarkdownParser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,6 +117,38 @@ fun EditorScreen(viewModel: DocumentViewModel) {
     var mode by rememberSaveable { mutableStateOf(Mode.SPLIT) }
     val currentMode = effectiveMode(mode, isWide)
     var menuOpen by remember { mutableStateOf(false) }
+
+    // Document structure, recomputed only when the text changes: the outline
+    // feeds the table-of-contents action, the notes feed the Notes… panel.
+    // Both parsers are line-oriented and cheap (see MarkdownParser).
+    val outline = remember(viewModel.text) { MarkdownParser.outline(viewModel.text) }
+    val notes = remember(viewModel.text) { MarkdownParser.notes(viewModel.text) }
+    var contentsOpen by remember { mutableStateOf(false) }
+    var notesOpen by remember { mutableStateOf(false) }
+    var examplesOpen by remember { mutableStateOf(false) }
+    var pdfLayoutDialogOpen by remember { mutableStateOf(false) }
+    // The bundled example documents (assets/examples/*.md); the "Example
+    // Book" folder ships alongside them but belongs to Example Book… below.
+    // Listed once — the APK's asset table can't change while we're running.
+    val examples = remember {
+        context.assets.list("examples").orEmpty().filter { it.endsWith(".md") }.sorted()
+    }
+    // The latest scroll-to-heading request for the preview. The counter id
+    // makes every tap a distinct request (see PreviewNavigation).
+    var previewNavigation by remember { mutableStateOf<PreviewNavigation?>(null) }
+
+    // The writer-mode book (a user-picked folder tree — see book/Book.kt).
+    // The holder restores its persisted tree URI from SharedPreferences, so
+    // recreating it with the screen is free; it gets the application context
+    // because it outlives any one composition and must not pin the Activity.
+    val bookState = remember { BookState(context.applicationContext) }
+    var bookSheetOpen by remember { mutableStateOf(false) }
+    // New Book… runs in two steps: the name dialog first, then a tree picker
+    // for where to keep it. `newBookDialogOpen` shows the dialog;
+    // `pendingBookName` carries the chosen name across the picker round-trip.
+    var newBookDialogOpen by remember { mutableStateOf(false) }
+    var pendingBookName by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     val openLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -122,9 +176,101 @@ fun EditorScreen(viewModel: DocumentViewModel) {
             viewModel.saveAs(it)
         }
     }
+    // Export as PDF: the user picks the destination first, then the document
+    // renders offscreen and the single-page PDF is written to that URI.
+    val exportPdfLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        uri?.let { target ->
+            Exporter.renderPdf(context, viewModel.text, viewModel.displayName, dark) { bytes ->
+                val written = bytes != null && runCatching {
+                    // "wt" truncates — plain "w" keeps stale bytes when
+                    // overwriting a longer, already-existing file — but some
+                    // documents providers only support "w"; fall back rather
+                    // than fail (CreateDocument made the file empty anyway).
+                    val stream = runCatching { context.contentResolver.openOutputStream(target, "wt") }
+                        .getOrNull() ?: context.contentResolver.openOutputStream(target)
+                    stream!!.use { it.write(bytes) }
+                }.isSuccess
+                if (!written) {
+                    // Don't leave the freshly created, empty .pdf silently in
+                    // place — say the export failed.
+                    Toast.makeText(context, "Couldn't export the PDF.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // Open Book…: the user picks the book's root folder; the grant is made
+    // persistable and the tree URI remembered inside BookState.adopt.
+    val openBookLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let { bookState.adopt(it) }
+    }
+    // New Book…, step two: this tree picker chooses the PARENT folder — SAF
+    // can only grant existing trees, so the book itself (a subfolder named in
+    // the dialog of step one) is created inside the picked tree by
+    // BookState.createBook, which also takes the persistable grant on the
+    // parent (it covers the subfolder — tree grants are recursive). On
+    // success the sheet opens on the fresh, empty book.
+    val newBookLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        val name = pendingBookName
+        pendingBookName = null
+        if (uri == null || name == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val created = withContext(Dispatchers.IO) { bookState.createBook(uri, name) }
+            if (created) {
+                bookSheetOpen = true
+            } else {
+                Toast.makeText(context, "Couldn't create \"$name\".", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // Example Book…: the same parent-tree picker as New Book…, but the
+    // content is copied out of the bundled assets by
+    // BookState.createExampleBook (which dedupes the folder name and takes
+    // the persistable grant, exactly like createBook). On success the sheet
+    // opens on the fresh copy.
+    val exampleBookLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val created = withContext(Dispatchers.IO) { bookState.createExampleBook(uri) }
+            if (created) {
+                bookSheetOpen = true
+            } else {
+                Toast.makeText(context, "Couldn't create the example book.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     fun saveOrSaveAs() {
         if (!viewModel.save()) createLauncher.launch(suggestedFileName(viewModel.displayName))
+    }
+
+    // Open a bundled example as a fresh untitled document — the same route
+    // shared text takes in via ACTION_SEND (see DocumentViewModel
+    // .acceptSharedText): no backing file, the user saves it wherever they
+    // like. Replaces the buffer like New / Open… do. The asset read stays
+    // off the main thread, tiny as it is.
+    fun openExample(fileName: String) {
+        scope.launch {
+            val source = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.assets.open("examples/$fileName").bufferedReader().use { it.readText() }
+                }.getOrNull()
+            }
+            if (source != null) {
+                viewModel.acceptSharedText(source)
+            } else {
+                Toast.makeText(context, "Couldn't open the example.", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     // Approximate the iOS autosave: flush a writable, dirty buffer when the
@@ -156,6 +302,38 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                     )
                 },
                 actions = {
+                    // Table of contents: enabled once the document has any
+                    // headings. Tapping an entry makes sure the preview is on
+                    // screen (Edit flips to Preview; Split and Preview already
+                    // show it) and scrolls it to that heading's anchor.
+                    Box {
+                        IconButton(onClick = { contentsOpen = true }, enabled = outline.isNotEmpty()) {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Contents")
+                        }
+                        DropdownMenu(expanded = contentsOpen, onDismissRequest = { contentsOpen = false }) {
+                            outline.forEach { entry ->
+                                DropdownMenuItem(
+                                    text = {
+                                        // Two spaces of indent per level beyond 1 —
+                                        // enough to read the nesting at a glance.
+                                        Text(
+                                            "  ".repeat((entry.level - 1).coerceAtLeast(0)) + entry.text,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    },
+                                    onClick = {
+                                        contentsOpen = false
+                                        if (currentMode == Mode.EDIT) mode = Mode.PREVIEW
+                                        previewNavigation = PreviewNavigation(
+                                            id = (previewNavigation?.id ?: 0L) + 1,
+                                            slug = entry.slug,
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
                     ModeSwitch(availableModes(isWide), currentMode) { mode = it }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
@@ -169,6 +347,11 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                 menuOpen = false
                                 openLauncher.launch(arrayOf("text/markdown", "text/plain", "application/octet-stream"))
                             })
+                            // The bundled examples, in their own dropdown
+                            // (anchored to this same button — see below).
+                            DropdownMenuItem(text = { Text("Examples") }, onClick = {
+                                menuOpen = false; examplesOpen = true
+                            })
                             DropdownMenuItem(text = { Text("Save") }, onClick = {
                                 menuOpen = false; saveOrSaveAs()
                             })
@@ -181,9 +364,74 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                 menuOpen = false
                                 Exporter.shareSource(context, viewModel.text, viewModel.displayName)
                             })
-                            DropdownMenuItem(text = { Text("Print / Save as PDF…") }, onClick = {
+                            DropdownMenuItem(text = { Text("Share Rendered PDF…") }, onClick = {
+                                menuOpen = false
+                                Exporter.sharePdf(context, viewModel.text, viewModel.displayName, dark)
+                            })
+                            DropdownMenuItem(text = { Text("Export as PDF…") }, onClick = {
+                                menuOpen = false
+                                exportPdfLauncher.launch(suggestedPdfName(viewModel.displayName))
+                            })
+                            // The persistent PDF shape both PDF paths honor
+                            // (see PdfLayout / Exporter.renderPdf).
+                            DropdownMenuItem(text = { Text("PDF Layout…") }, onClick = {
+                                menuOpen = false; pdfLayoutDialogOpen = true
+                            })
+                            HorizontalDivider()
+                            // The private author notes (`<!-- note: … -->`),
+                            // greyed out until the document has one.
+                            DropdownMenuItem(
+                                text = { Text("Notes…") },
+                                enabled = notes.isNotEmpty(),
+                                onClick = { menuOpen = false; notesOpen = true },
+                            )
+                            HorizontalDivider()
+                            // The writer-mode book: create one from scratch
+                            // or pick an existing folder tree, then browse it
+                            // from Show Book (see BookSheet.kt). The labels
+                            // match the iOS/macOS menu.
+                            DropdownMenuItem(text = { Text("New Book…") }, onClick = {
+                                menuOpen = false; newBookDialogOpen = true
+                            })
+                            DropdownMenuItem(text = { Text("Open Book…") }, onClick = {
+                                menuOpen = false
+                                openBookLauncher.launch(null)
+                            })
+                            if (bookState.treeUri != null) {
+                                DropdownMenuItem(text = { Text("Show Book") }, onClick = {
+                                    menuOpen = false; bookSheetOpen = true
+                                })
+                                DropdownMenuItem(text = { Text("Close Book") }, onClick = {
+                                    menuOpen = false; bookState.close()
+                                })
+                            }
+                            HorizontalDivider()
+                            DropdownMenuItem(text = { Text("Print…") }, onClick = {
                                 menuOpen = false
                                 Exporter.printRendered(context, viewModel.text, viewModel.displayName, dark)
+                            })
+                        }
+                        // The Examples list, anchored to the same More
+                        // button (the main menu closes as this one opens).
+                        // Picking one seeds a fresh untitled document with
+                        // that sample — see openExample above.
+                        DropdownMenu(expanded = examplesOpen, onDismissRequest = { examplesOpen = false }) {
+                            examples.forEach { fileName ->
+                                DropdownMenuItem(
+                                    text = { Text(exampleTitle(fileName)) },
+                                    onClick = {
+                                        examplesOpen = false
+                                        openExample(fileName)
+                                    },
+                                )
+                            }
+                            HorizontalDivider()
+                            // The sample book lives with its fellow samples:
+                            // copies the bundled book into a picked folder
+                            // and opens it (see exampleBookLauncher above).
+                            DropdownMenuItem(text = { Text("Example Book…") }, onClick = {
+                                examplesOpen = false
+                                exampleBookLauncher.launch(null)
                             })
                         }
                     }
@@ -191,7 +439,102 @@ fun EditorScreen(viewModel: DocumentViewModel) {
             )
         },
     ) { padding ->
-        Content(viewModel, currentMode, Modifier.padding(padding))
+        Content(viewModel, currentMode, previewNavigation, Modifier.padding(padding))
+    }
+
+    // Notes panel: purely informational. The preview never renders notes
+    // (they're private by design), and the plain BasicTextField editor
+    // offers no reliable programmatic scrolling — so jumping the editor to
+    // a note's line is intentionally out of scope on Android; the 1-based
+    // line numbers are the hand-rail instead.
+    if (notesOpen) {
+        AlertDialog(
+            onDismissRequest = { notesOpen = false },
+            title = { Text("Notes") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    notes.forEach { note ->
+                        Text(
+                            "Line ${note.line + 1} — ${note.text}",
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { notesOpen = false }) { Text("Done") }
+            },
+        )
+    }
+
+    // The PDF layout chooser: a small radio dialog over the persistent
+    // setting. Composed only while open, so the stored value is re-read at
+    // each opening; a tap applies (and saves) immediately — Done just
+    // closes.
+    if (pdfLayoutDialogOpen) {
+        var selection by remember { mutableStateOf(PdfLayout.load(context)) }
+        AlertDialog(
+            onDismissRequest = { pdfLayoutDialogOpen = false },
+            title = { Text("PDF Layout") },
+            text = {
+                Column {
+                    PdfLayout.entries.forEach { layout ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selection = layout
+                                    PdfLayout.save(context, layout)
+                                }
+                                .padding(vertical = 4.dp),
+                        ) {
+                            RadioButton(
+                                selected = selection == layout,
+                                onClick = {
+                                    selection = layout
+                                    PdfLayout.save(context, layout)
+                                },
+                            )
+                            Text(layout.label, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { pdfLayoutDialogOpen = false }) { Text("Done") }
+            },
+        )
+    }
+
+    // New Book…, step one: the shared name dialog (see BookSheet.NameDialog).
+    // Dismissed synchronously in the confirm handler — like the sheet's
+    // create paths — before the picker launches, so it can't be re-confirmed.
+    if (newBookDialogOpen) {
+        NameDialog(
+            title = "New Book",
+            initialName = "My Book",
+            onCancel = { newBookDialogOpen = false },
+            onCreate = { name ->
+                newBookDialogOpen = false
+                pendingBookName = name
+                newBookLauncher.launch(null)
+            },
+        )
+    }
+
+    // The book navigator. Composed only while open, so its listing is
+    // re-read from the tree on every opening (see BookSheet). Articles open
+    // through loadAsync — the provider read must not stall the UI.
+    if (bookSheetOpen) {
+        BookSheet(
+            book = bookState,
+            onOpenArticle = { article ->
+                viewModel.loadAsync(article.file.uri, writable = true)
+                bookSheetOpen = false
+            },
+            onDismiss = { bookSheetOpen = false },
+        )
     }
 }
 
@@ -220,10 +563,15 @@ private fun ModeSwitch(modes: List<Mode>, selected: Mode, onChange: (Mode) -> Un
 }
 
 @Composable
-private fun Content(viewModel: DocumentViewModel, mode: Mode, modifier: Modifier) {
+private fun Content(
+    viewModel: DocumentViewModel,
+    mode: Mode,
+    navigation: PreviewNavigation?,
+    modifier: Modifier,
+) {
     when (mode) {
         Mode.EDIT -> EditorPane(viewModel, modifier.fillMaxSize())
-        Mode.PREVIEW -> PreviewPane(viewModel, modifier.fillMaxSize())
+        Mode.PREVIEW -> PreviewPane(viewModel, navigation, modifier.fillMaxSize())
         Mode.SPLIT -> BoxWithConstraints(modifier.fillMaxSize()) {
             if (maxWidth >= 640.dp) {
                 Row(Modifier.fillMaxSize()) {
@@ -232,13 +580,13 @@ private fun Content(viewModel: DocumentViewModel, mode: Mode, modifier: Modifier
                         modifier = Modifier.fillMaxSize().widthIn(max = 1.dp),
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
-                    PreviewPane(viewModel, Modifier.weight(1f).fillMaxSize())
+                    PreviewPane(viewModel, navigation, Modifier.weight(1f).fillMaxSize())
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
                     EditorPane(viewModel, Modifier.weight(1f).fillMaxWidth())
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    PreviewPane(viewModel, Modifier.weight(1f).fillMaxWidth())
+                    PreviewPane(viewModel, navigation, Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
@@ -279,14 +627,16 @@ private fun EditorPane(viewModel: DocumentViewModel, modifier: Modifier) {
 }
 
 @Composable
-private fun PreviewPane(viewModel: DocumentViewModel, modifier: Modifier) {
+private fun PreviewPane(viewModel: DocumentViewModel, navigation: PreviewNavigation?, modifier: Modifier) {
     // The rendered preview is a WebView showing the same themed HTML as
     // Print / Save-as-PDF, so LaTeX math, Mermaid and PlantUML render (offline).
     // It scrolls and lays out internally (see the CSS in MarkdownHtml).
+    // `navigation` scrolls it to a heading when the table of contents asks.
     RichPreview(
         text = viewModel.text,
         title = viewModel.displayName,
         modifier = modifier.fillMaxSize(),
+        navigation = navigation,
     )
 }
 
@@ -297,3 +647,14 @@ private fun suggestedFileName(displayName: String): String {
         .ifBlank { "Untitled" }
     return "$base.md"
 }
+
+private fun suggestedPdfName(displayName: String): String =
+    suggestedFileName(displayName).removeSuffix(".md") + ".pdf"
+
+/** The ordering prefix the bundled example files carry ("01-", "02-", …). */
+private val examplePrefix = Regex("""^\d+-""")
+
+/** Menu label for a bundled example: the file name without ".md" and
+ *  without its ordering prefix ("01-Welcome.md" → "Welcome"). */
+private fun exampleTitle(fileName: String): String =
+    fileName.removeSuffix(".md").replace(examplePrefix, "")

@@ -14,6 +14,7 @@ package me.nettrash.md
 
 import android.content.Intent
 import android.os.Bundle
+import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -27,6 +28,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Must run before the first WebView in the process exists: lets a
+        // WebView draw its FULL document into a canvas rather than just the
+        // visible tiles — what the single-page PDF export captures (see
+        // Exporter.renderPdf). Merely disables a tiling optimization.
+        WebView.enableSlowWholeDocumentDraw()
         enableEdgeToEdge()
         if (savedInstanceState == null) handleIntent(intent)
         setContent {

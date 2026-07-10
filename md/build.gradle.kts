@@ -33,7 +33,7 @@ val storedVersionCode: Int = run {
 }
 
 val resolvedVersionName: String =
-    (project.findProperty("versionName") as String?)?.takeIf { it.isNotBlank() } ?: "1.1"
+    (project.findProperty("versionName") as String?)?.takeIf { it.isNotBlank() } ?: "1.2"
 
 val skipVersionBump: Boolean = project.hasProperty("noBump")
 
@@ -139,6 +139,9 @@ dependencies {
     // Only the parent for the XML splash window theme
     // (`Theme.Material3.*`). Compose draws everything at runtime.
     implementation(libs.material)
+
+    // SAF folder-tree walking for the book navigator (`book/Book.kt`).
+    implementation(libs.androidx.documentfile)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
