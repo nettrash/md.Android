@@ -11,14 +11,11 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
 
 ### Added
 
-- **Share Rendered PDF.** Share the rendered document as a PDF — a single
-  continuous page exactly as tall as the content, matching the iOS / macOS
-  export, with no line sliced at a page boundary. (The print dialog's "Save
-  as PDF" paginates to A4, which cuts lines at every page break.) Documents
-  that render taller than the PDF format's 14,400 pt (200-inch) page cap are
-  scaled down uniformly so the export is still one complete page rather than
-  being clipped at the cap.
-- **Export as PDF.** Save that same single-page PDF anywhere via the system
+- **Share Rendered PDF.** Share the rendered document as a PDF — real A4
+  pages with line-aware page breaks, matching the iOS / macOS export: no
+  line of text or diagram is sliced through the middle at a page boundary,
+  and the author's `\newpage` markers start fresh pages.
+- **Export as PDF.** Save that same PDF anywhere via the system
   create-document picker.
 - **Autosave.** The document now saves itself about a second after typing
   pauses (once it has a writable location), so the file on disk always
@@ -28,10 +25,15 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
   (switching to Preview first when needed). Headings now carry GitHub-style
   anchors, so `[…](#section)` links navigate inside the document too.
 - **Page breaks.** Write `\newpage` (or `\pagebreak`) on its own line — the
-  Pandoc convention — to end a page where *you* decide: the shared / exported
-  PDF becomes one content-tall page per section (still nothing sliced
-  mid-line), printing breaks there, and the preview shows a subtle dashed
-  rule.
+  Pandoc convention — to end a page where *you* decide: shared and exported
+  PDFs and printouts start a fresh A4 page there, and the preview shows a
+  subtle dashed rule.
+- **Synchronized scrolling in Split.** On a wide screen, the editor and
+  the preview scroll as one: move either pane and the other follows
+  proportionally. Jumping to a heading from the table of contents still
+  lands the preview on its precise spot.
+- **Word and character count.** Every document shows its live word and
+  character count in a footer under the page.
 - **Private author notes.** `<!-- note: … -->` comments are the writer's
   working notes: a new "Notes…" panel lists them, and they never appear in
   the preview, the PDF, or print. (Other HTML comments are now dropped from
@@ -63,10 +65,6 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
   a title page, then every chapter and article in reading order, each
   starting on a fresh page — through the same PDF pipeline as a single
   document, ready to share or save as "&lt;Book name&gt;.pdf".
-- **PDF layout setting.** Choose how PDFs are built, next to the export
-  actions: "One long page" (the continuous, nothing-sliced page — still
-  the default) or "A4 pages" — real A4 pagination with line-aware page
-  breaks and proper margins, honouring `\newpage`.
 - **Export a book as EPUB.** "Export as EPUB…" packages the book as a
   standard EPUB 3 — chapters and articles in reading order with a proper
   table of contents — that opens in Play Books and other readers. Math
@@ -75,6 +73,11 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
 
 ### Changed
 
+- **Paper is white.** Printouts and PDFs no longer carry the on-screen
+  paper tint — the tinted block ended mid-page against the white A4
+  margins — and always use the light ink, even from a dark-mode device:
+  the whole page is one color, the way a manuscript prints. The preview
+  keeps its warm paper and dark theme on screen.
 - The "Print / Save as PDF…" menu item is now "Print…", mirroring iOS — the
   dedicated PDF actions above are the way to get a PDF.
 - Printed and exported documents now use a smaller body size (11 pt, down
@@ -82,6 +85,14 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
   page — and long code lines wrap instead of being clipped at the code
   block's edge (on screen they scroll; paper can't). The on-screen preview
   is unchanged.
+
+### Fixed
+
+- **Legacy text files decode correctly.** A legacy-encoded file without a
+  byte-order mark (Windows-1251 Cyrillic, say) could be misread as UTF-16 —
+  mojibake that the autosave would then have baked into the file as UTF-8.
+  UTF-16 is now only detected by its BOM, and Windows-1251 joined the
+  decode fallbacks, so such files open as the text they are.
 
 ## [1.1] — 2026-07-05
 

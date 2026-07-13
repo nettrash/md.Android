@@ -476,4 +476,20 @@ class MarkdownParserTest {
         assertTrue(html.contains("visible"))
         assertFalse(html.contains("secret draft thought"))
     }
+
+    @Test fun exportPageIsPlainWhiteAndAlwaysLight() {
+        // Print / PDF pages keep their own single color: no paper tint
+        // (which would end mid-page next to the white A4 margins), and the
+        // light palette even from a dark device — dark cream-on-carbon is
+        // a screen theme, unreadable as cream-on-white.
+        val export = MarkdownHtml.document("hello", "t", dark = true, export = true)
+        assertTrue("plain white page", export.contains("background: #FFFFFF"))
+        assertTrue("always light", export.contains("color-scheme: light"))
+        assertFalse("no dark paper in an export", export.contains("#241E18"))
+        assertTrue("Mermaid sees light mode too", export.contains("data-md-dark=\"0\""))
+        // The on-screen preview still honors the device's appearance.
+        val preview = MarkdownHtml.document("hello", "t", dark = true)
+        assertTrue(preview.contains("background: #241E18"))
+        assertTrue(preview.contains("data-md-dark=\"1\""))
+    }
 }

@@ -30,8 +30,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Must run before the first WebView in the process exists: lets a
         // WebView draw its FULL document into a canvas rather than just the
-        // visible tiles — what the single-page PDF export captures (see
-        // Exporter.renderPdf). Merely disables a tiling optimization.
+        // visible tiles — what the EPUB export's rich-block snapshots
+        // capture (see EpubExporter.renderRich). Merely disables a tiling
+        // optimization.
         WebView.enableSlowWholeDocumentDraw()
         enableEdgeToEdge()
         if (savedInstanceState == null) handleIntent(intent)

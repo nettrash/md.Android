@@ -35,7 +35,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,8 +42,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -65,7 +67,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -76,12 +77,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -102,6 +105,7 @@ import kotlinx.coroutines.withContext
 import me.nettrash.md.DocumentViewModel
 import me.nettrash.md.book.BookState
 import me.nettrash.md.markdown.MarkdownParser
+import me.nettrash.md.markdown.WritingStats
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,7 +130,6 @@ fun EditorScreen(viewModel: DocumentViewModel) {
     var contentsOpen by remember { mutableStateOf(false) }
     var notesOpen by remember { mutableStateOf(false) }
     var examplesOpen by remember { mutableStateOf(false) }
-    var pdfLayoutDialogOpen by remember { mutableStateOf(false) }
     // The bundled example documents (assets/examples/*.md); the "Example
     // Book" folder ships alongside them but belongs to Example Book… below.
     // Listed once — the APK's asset table can't change while we're running.
@@ -372,11 +375,6 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                 menuOpen = false
                                 exportPdfLauncher.launch(suggestedPdfName(viewModel.displayName))
                             })
-                            // The persistent PDF shape both PDF paths honor
-                            // (see PdfLayout / Exporter.renderPdf).
-                            DropdownMenuItem(text = { Text("PDF Layout…") }, onClick = {
-                                menuOpen = false; pdfLayoutDialogOpen = true
-                            })
                             HorizontalDivider()
                             // The private author notes (`<!-- note: … -->`),
                             // greyed out until the document has one.
@@ -438,15 +436,48 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                 },
             )
         },
+        bottomBar = {
+            // The author's counters: live words and characters, tucked
+            // under the panes. Recomputed only when the text changes —
+            // the same house pattern as the outline above. The strip pads
+            // itself above the navigation bar (the Scaffold doesn't inset
+            // a custom bottomBar) and above the keyboard while writing —
+            // the inset-padding modifiers coordinate, so the two never sum.
+            val stats = remember(viewModel.text) {
+                WritingStats.words(viewModel.text) to viewModel.text.length
+            }
+            Column(Modifier.navigationBarsPadding().imePadding()) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Text(
+                        "${stats.first} words · ${stats.second} characters",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
     ) { padding ->
-        Content(viewModel, currentMode, previewNavigation, Modifier.padding(padding))
+        // `consumeWindowInsets` marks the Scaffold padding as consumed, so
+        // no nested inset modifier (an imePadding down the tree) can pad
+        // the same keyboard height a second time.
+        Content(
+            viewModel, currentMode, previewNavigation,
+            Modifier.padding(padding).consumeWindowInsets(padding),
+        )
     }
 
     // Notes panel: purely informational. The preview never renders notes
-    // (they're private by design), and the plain BasicTextField editor
-    // offers no reliable programmatic scrolling — so jumping the editor to
-    // a note's line is intentionally out of scope on Android; the 1-based
-    // line numbers are the hand-rail instead.
+    // (they're private by design), and jumping the editor to a note's
+    // *line* would need the text layout's line geometry (the pane's
+    // ScrollState scrolls by pixel, not by line) — intentionally out of
+    // scope on Android; the 1-based line numbers are the hand-rail instead.
     if (notesOpen) {
         AlertDialog(
             onDismissRequest = { notesOpen = false },
@@ -463,46 +494,6 @@ fun EditorScreen(viewModel: DocumentViewModel) {
             },
             confirmButton = {
                 TextButton(onClick = { notesOpen = false }) { Text("Done") }
-            },
-        )
-    }
-
-    // The PDF layout chooser: a small radio dialog over the persistent
-    // setting. Composed only while open, so the stored value is re-read at
-    // each opening; a tap applies (and saves) immediately — Done just
-    // closes.
-    if (pdfLayoutDialogOpen) {
-        var selection by remember { mutableStateOf(PdfLayout.load(context)) }
-        AlertDialog(
-            onDismissRequest = { pdfLayoutDialogOpen = false },
-            title = { Text("PDF Layout") },
-            text = {
-                Column {
-                    PdfLayout.entries.forEach { layout ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selection = layout
-                                    PdfLayout.save(context, layout)
-                                }
-                                .padding(vertical = 4.dp),
-                        ) {
-                            RadioButton(
-                                selected = selection == layout,
-                                onClick = {
-                                    selection = layout
-                                    PdfLayout.save(context, layout)
-                                },
-                            )
-                            Text(layout.label, modifier = Modifier.padding(start = 8.dp))
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { pdfLayoutDialogOpen = false }) { Text("Done") }
             },
         )
     }
@@ -570,23 +561,26 @@ private fun Content(
     modifier: Modifier,
 ) {
     when (mode) {
-        Mode.EDIT -> EditorPane(viewModel, modifier.fillMaxSize())
-        Mode.PREVIEW -> PreviewPane(viewModel, navigation, modifier.fillMaxSize())
+        Mode.EDIT -> EditorPane(viewModel, null, modifier.fillMaxSize())
+        Mode.PREVIEW -> PreviewPane(viewModel, navigation, null, modifier.fillMaxSize())
         Mode.SPLIT -> BoxWithConstraints(modifier.fillMaxSize()) {
+            // The pane link that makes the two halves scroll as one — a
+            // plain remembered object; the panes register themselves on it.
+            val scrollSync = remember { ScrollSync() }
             if (maxWidth >= 640.dp) {
                 Row(Modifier.fillMaxSize()) {
-                    EditorPane(viewModel, Modifier.weight(1f).fillMaxSize())
+                    EditorPane(viewModel, scrollSync, Modifier.weight(1f).fillMaxSize())
                     HorizontalDivider(
                         modifier = Modifier.fillMaxSize().widthIn(max = 1.dp),
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
-                    PreviewPane(viewModel, navigation, Modifier.weight(1f).fillMaxSize())
+                    PreviewPane(viewModel, navigation, scrollSync, Modifier.weight(1f).fillMaxSize())
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
-                    EditorPane(viewModel, Modifier.weight(1f).fillMaxWidth())
+                    EditorPane(viewModel, scrollSync, Modifier.weight(1f).fillMaxWidth())
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    PreviewPane(viewModel, navigation, Modifier.weight(1f).fillMaxWidth())
+                    PreviewPane(viewModel, navigation, scrollSync, Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
@@ -594,49 +588,101 @@ private fun Content(
 }
 
 @Composable
-private fun EditorPane(viewModel: DocumentViewModel, modifier: Modifier) {
-    Box(modifier.background(MaterialTheme.colorScheme.background)) {
-        BasicTextField(
-            value = viewModel.text,
-            onValueChange = viewModel::onTextChange,
-            modifier = Modifier.fillMaxSize().imePadding().padding(16.dp),
-            textStyle = TextStyle(
-                fontFamily = FontFamily.Serif,
-                fontSize = 16.sp,
-                lineHeight = 24.sp,
-                color = MaterialTheme.colorScheme.onBackground,
-            ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            keyboardOptions = KeyboardOptions(
-                autoCorrectEnabled = false,
-                capitalization = KeyboardCapitalization.Sentences,
-            ),
-            decorationBox = { inner ->
-                if (viewModel.text.isEmpty()) {
-                    Text(
-                        "# Start writing…",
-                        fontFamily = FontFamily.Serif,
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
+private fun EditorPane(viewModel: DocumentViewModel, scrollSync: ScrollSync?, modifier: Modifier) {
+    // The text field sits in a scroll container the pane owns (rather than
+    // relying on BasicTextField's internal scroller) so Split's scroll sync
+    // can read and drive a real ScrollState. The field keeps at least the
+    // viewport's height, so tapping anywhere below a short text still
+    // focuses it.
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    // The scroll target a preview-relayed scroll just applied; the
+    // collector below consumes exactly that value instead of relaying it
+    // back — the feedback-loop guard. A target, not a boolean bracket:
+    // snapshotFlow delivers on a later dispatch than scrollTo, so any
+    // flag would already be reset by the time the value arrives. -1 =
+    // nothing pending. A plain holder: must never recompose anything.
+    val expectedRemote = remember { intArrayOf(-1) }
+    if (scrollSync != null) {
+        // (Re-)wire on every composition, so the freshest state owns the
+        // closures.
+        scrollSync.scrollEditor = { fraction ->
+            scope.launch {
+                // Already coerced into 0..maxValue, so ScrollState writes
+                // exactly this value and the collector recognizes it.
+                val target = (fraction.coerceIn(0f, 1f) * scrollState.maxValue).toInt()
+                expectedRemote[0] = target
+                scrollState.scrollTo(target)
+            }
+        }
+        LaunchedEffect(scrollState, scrollSync) {
+            snapshotFlow { scrollState.value }.collect { value ->
+                val expected = expectedRemote[0]
+                expectedRemote[0] = -1 // consume; a mismatch clears staleness
+                val max = scrollState.maxValue
+                if (value != expected && max > 0) {
+                    scrollSync.editorDidScroll(value.toFloat() / max)
                 }
-                inner()
-            },
-        )
+            }
+        }
+    }
+    // No imePadding here: the always-present stats bottomBar lifts the
+    // Scaffold's content padding above the keyboard already.
+    BoxWithConstraints(modifier.background(MaterialTheme.colorScheme.background)) {
+        val viewportHeight = maxHeight
+        Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
+            BasicTextField(
+                value = viewModel.text,
+                onValueChange = viewModel::onTextChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = viewportHeight)
+                    .padding(16.dp),
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    color = MaterialTheme.colorScheme.onBackground,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(
+                    autoCorrectEnabled = false,
+                    capitalization = KeyboardCapitalization.Sentences,
+                ),
+                decorationBox = { inner ->
+                    if (viewModel.text.isEmpty()) {
+                        Text(
+                            "# Start writing…",
+                            fontFamily = FontFamily.Serif,
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    }
+                    inner()
+                },
+            )
+        }
     }
 }
 
 @Composable
-private fun PreviewPane(viewModel: DocumentViewModel, navigation: PreviewNavigation?, modifier: Modifier) {
+private fun PreviewPane(
+    viewModel: DocumentViewModel,
+    navigation: PreviewNavigation?,
+    scrollSync: ScrollSync?,
+    modifier: Modifier,
+) {
     // The rendered preview is a WebView showing the same themed HTML as
     // Print / Save-as-PDF, so LaTeX math, Mermaid and PlantUML render (offline).
     // It scrolls and lays out internally (see the CSS in MarkdownHtml).
-    // `navigation` scrolls it to a heading when the table of contents asks.
+    // `navigation` scrolls it to a heading when the table of contents asks;
+    // `scrollSync` links it to the editor in Split.
     RichPreview(
         text = viewModel.text,
         title = viewModel.displayName,
         modifier = modifier.fillMaxSize(),
         navigation = navigation,
+        scrollSync = scrollSync,
     )
 }
 

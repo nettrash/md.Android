@@ -3,13 +3,14 @@
  * md (Android)
  *
  * The document's output paths: Share (the raw Markdown source), Share /
- * Export as PDF (a single content-tall page by default, or real A4 pages
- * when the "PDF layout" setting says so — see PdfLayout) and Print
- * (paginated for real paper). Mirrors the iOS DocumentExport.
+ * Export as PDF and Print — all real A4 pages, paginated line-aware by the
+ * print engine, with the author's `\newpage` markers cutting pages. Mirrors
+ * the iOS DocumentExport. The pages are plain white with the light ink
+ * regardless of the app's theme: paper tint and dark mode are screen
+ * themes (see MarkdownHtml.css).
  *
  * Everything renders through an offscreen WebView, the same way the iOS app
- * renders through WKWebView — WebKit honors the full typewriter CSS,
- * including the paper background, in the printout and the PDFs alike.
+ * renders through WKWebView.
  */
 
 package me.nettrash.md.ui
@@ -18,7 +19,6 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
-import android.graphics.pdf.PdfDocument
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
@@ -34,11 +34,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.nettrash.md.markdown.MarkdownHtml
-import org.json.JSONObject
-import org.json.JSONTokener
-import java.io.ByteArrayOutputStream
 import java.io.File
-import kotlin.math.ceil
 
 object Exporter {
 
@@ -50,15 +46,10 @@ object Exporter {
      *  drawn into the PDF; mirrors [livePrintViews]. */
     private val livePdfViews = mutableListOf<WebView>()
 
-    /** A4 width at 72 dpi, in PostScript points. The exported PDF keeps this
-     *  width — the same page width as the iOS / macOS export — and grows
-     *  into a single page as tall as the content (see [renderPdf]). */
+    /** A4 width at 72 dpi, in PostScript points — the viewport width the
+     *  offscreen WebViews lay content out against, matching the iOS /
+     *  macOS export. */
     private const val PAGE_WIDTH_PT = 595
-
-    /** The largest page dimension the PDF format allows — 200 inches at
-     *  72 dpi. A document that renders taller is scaled down uniformly to
-     *  fit, so the export stays one uncut page (see [captureLaidOutPdf]). */
-    private const val MAX_PAGE_PT = 14_400
 
     /** Scheduling for the offscreen WebViews. A detached View's own
      *  post/postDelayed just parks runnables until the view attaches to a
@@ -84,9 +75,8 @@ object Exporter {
     }
 
     /** Render the document to themed HTML and hand it to Android's print
-     *  framework, which paginates it to A4 for real paper. (For a PDF, use
-     *  [sharePdf] / [renderPdf] — a single content-tall page with no line
-     *  sliced at a page boundary.)
+     *  framework, which paginates it to A4 for real paper — the same pages
+     *  [sharePdf] / [renderPdf] produce as a file.
      *
      *  Served through [MdAssetWebViewClient] so the rich renderers (math /
      *  Mermaid / PlantUML, all offline) resolve, and the print job is created
@@ -124,171 +114,19 @@ object Exporter {
     }
 
     /** Render the document to PDF bytes and hand them to [done] on the main
-     *  thread (null if rendering failed). Which shape depends on the user's
-     *  persistent [PdfLayout] setting: one content-tall page per `\newpage`
-     *  section (the default — [renderSinglePdf]) or real A4 pages, paginated
-     *  line-aware by the print engine ([renderA4Pdf]). Share Rendered PDF
-     *  and Export as PDF (documents and compiled books alike) all come
-     *  through here, so the setting covers every PDF the app makes. */
+     *  thread (null if rendering failed). Every PDF the app makes — Share
+     *  Rendered PDF and Export as PDF, documents and compiled books alike —
+     *  comes through here: real A4 pages, paginated line-aware by the
+     *  print engine ([renderA4Pdf]), exactly what printing produces. */
     fun renderPdf(context: Context, source: String, title: String, dark: Boolean, done: (ByteArray?) -> Unit) {
-        when (PdfLayout.load(context)) {
-            PdfLayout.SINGLE -> renderSinglePdf(context, source, title, dark, done)
-            PdfLayout.A4 -> renderA4Pdf(context, source, title, dark, done)
-        }
-    }
-
-    /** Render the document to a **single-page PDF exactly as tall as the
-     *  content** — the whole document as it appears in the preview, with no
-     *  line sliced at an A4 boundary (unlike [printRendered], which paginates
-     *  for real paper) — and hand the bytes to [done] on the main thread
-     *  (null if rendering failed).
-     *
-     *  The WebView is laid out 595 CSS px wide — the same viewport width as
-     *  the iOS / macOS export, since with `initial-scale=1` a CSS px is a dp —
-     *  then, once md-init.js flags the rich renderers complete, re-measured to
-     *  its full content height and drawn into one [PdfDocument] page. Drawing
-     *  the whole document (not just the visible tiles) requires
-     *  `WebView.enableSlowWholeDocumentDraw()`, set in MainActivity. */
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun renderSinglePdf(context: Context, source: String, title: String, dark: Boolean, done: (ByteArray?) -> Unit) {
-        val html = MarkdownHtml.document(source, title, dark, export = true)
-        val widthPx = (PAGE_WIDTH_PT * context.resources.displayMetrics.density).toInt()
-        val webView = WebView(context)
-        webView.settings.javaScriptEnabled = true
-        // Lay out at the final width BEFORE loading, so the CSS (and the
-        // diagram engines' text measurement) see the real viewport.
-        webView.measure(
-            View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(widthPx * 842 / PAGE_WIDTH_PT, View.MeasureSpec.EXACTLY),
-        )
-        webView.layout(0, 0, webView.measuredWidth, webView.measuredHeight)
-        webView.webViewClient = object : MdAssetWebViewClient(context.assets, { html }) {
-            override fun onPageFinished(view: WebView, url: String?) {
-                waitForRenderComplete(view, 0) { capturePdf(view, widthPx, done) }
-            }
-        }
-        livePdfViews.add(webView)
-        webView.loadUrl(MdAssetWebViewClient.INDEX_URL)
-    }
-
-    private fun capturePdf(view: WebView, widthPx: Int, done: (ByteArray?) -> Unit) {
-        // Read the full document height AND the author's `\newpage` cut
-        // positions from the DOM in one round-trip (like the iOS export)
-        // rather than re-measuring the view: a detached WebView's own
-        // measured content height only refreshes on a compositor commit,
-        // which a never-attached view may not have produced yet — the DOM
-        // is authoritative. CSS px == dp here (`initial-scale=1`).
-        view.evaluateJavascript(
-            "JSON.stringify({h: document.documentElement.scrollHeight," +
-                " pt: parseFloat(getComputedStyle(document.body).paddingTop) || 0," +
-                " pb: parseFloat(getComputedStyle(document.body).paddingBottom) || 0," +
-                " cuts: Array.from(document.querySelectorAll('.md-pagebreak'))" +
-                ".map(e => e.getBoundingClientRect().top + window.scrollY)})",
-        ) { value ->
-            val density = view.resources.displayMetrics.density
-            var cssHeight = 0f
-            val cutsPx = ArrayList<Int>()
-            runCatching {
-                // evaluateJavascript hands back the *JSON-quoted* string —
-                // unquote it first, then parse the payload.
-                val unquoted = JSONTokener(value ?: "null").nextValue() as? String ?: return@runCatching
-                val json = JSONObject(unquoted)
-                cssHeight = json.optDouble("h", 0.0).toFloat()
-                val padTop = json.optDouble("pt", 0.0)
-                val padBottom = json.optDouble("pb", 0.0)
-                val cuts = json.optJSONArray("cuts")
-                if (cuts != null) {
-                    for (index in 0 until cuts.length()) {
-                        // A cut inside the body's top / bottom padding means
-                        // the marker is the first / last thing in the
-                        // document — snap it to the edge so the segment rule
-                        // collapses it instead of emitting a padding-only
-                        // sliver page.
-                        var cut = cuts.optDouble(index, 0.0)
-                        cut = when {
-                            cut <= padTop + 1 -> 0.0
-                            cut >= cssHeight - padBottom - 1 -> cssHeight.toDouble()
-                            else -> cut
-                        }
-                        cutsPx.add(ceil(cut * density).toInt())
-                    }
-                }
-            }
-            val heightPx = ceil(cssHeight * density).toInt()
-                .coerceAtLeast(widthPx * 842 / PAGE_WIDTH_PT) // at least one A4 page
-            captureLaidOutPdf(view, widthPx, heightPx, cutsPx, done)
-        }
-    }
-
-    private fun captureLaidOutPdf(
-        view: WebView,
-        widthPx: Int,
-        heightPx: Int,
-        cutsPx: List<Int>,
-        done: (ByteArray?) -> Unit,
-    ) {
-        view.measure(
-            View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(heightPx, View.MeasureSpec.EXACTLY),
-        )
-        view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-        // Give the WebView a beat to repaint at the grown size before drawing.
-        handler.postDelayed({
-            val bytes = runCatching {
-                // Scale device px back to points so the page is 595 pt wide
-                // regardless of screen density; text stays vector either way.
-                var scale = PAGE_WIDTH_PT.toFloat() / view.measuredWidth
-                var widthPt = PAGE_WIDTH_PT
-                val total = view.measuredHeight
-                // The author's `\newpage` cuts split the document into
-                // sections; each becomes its own content-tall page.
-                // Consecutive / edge markers collapse into nothing rather
-                // than emitting empty pages.
-                val segments = ArrayList<Pair<Int, Int>>() // top to height, px
-                var top = 0
-                for (cut in cutsPx.map { it.coerceIn(0, total) }.sorted() + total) {
-                    if (cut - top >= 2) segments.add(top to (cut - top))
-                    top = maxOf(top, cut)
-                }
-                if (segments.isEmpty()) segments.add(0 to total)
-                // A page taller than the PDF format's cap shrinks uniformly —
-                // judged per page, so only a document with an oversize
-                // section triggers it. Nothing is sliced either way.
-                val tallestPt = ceil(segments.maxOf { it.second } * scale).toInt()
-                if (tallestPt > MAX_PAGE_PT) {
-                    val fit = MAX_PAGE_PT.toFloat() / tallestPt
-                    scale *= fit
-                    widthPt = ceil(PAGE_WIDTH_PT * fit).toInt().coerceAtLeast(1)
-                }
-                val pdf = PdfDocument()
-                try {
-                    segments.forEachIndexed { index, (segTop, segHeight) ->
-                        val heightPt = ceil(segHeight * scale).toInt()
-                            .coerceIn(1, MAX_PAGE_PT)
-                        val page = pdf.startPage(
-                            PdfDocument.PageInfo.Builder(widthPt, heightPt, index + 1).create(),
-                        )
-                        page.canvas.scale(scale, scale)
-                        page.canvas.translate(0f, -segTop.toFloat())
-                        view.draw(page.canvas)
-                        pdf.finishPage(page)
-                    }
-                    ByteArrayOutputStream().also { pdf.writeTo(it) }.toByteArray()
-                } finally {
-                    pdf.close()
-                }
-            }.getOrNull()
-            livePdfViews.remove(view)
-            view.destroy()
-            done(bytes)
-        }, 250)
+        renderA4Pdf(context, source, title, dark, done)
     }
 
     /** Render the document to a **real A4-paginated PDF** with line-aware
      *  page breaks (`\newpage` honored through the export CSS's
      *  `break-after: page`) and hand the bytes to [done] on the main thread
-     *  (null if rendering failed). The same offscreen-WebView setup as
-     *  [renderSinglePdf], but captured through the WebView print pipeline —
+     *  (null if rendering failed). An offscreen WebView laid out at the
+     *  export width, captured through the WebView print pipeline —
      *  [captureA4Pdf] drives the print adapter by hand, no print dialog. */
     @SuppressLint("SetJavaScriptEnabled")
     private fun renderA4Pdf(context: Context, source: String, title: String, dark: Boolean, done: (ByteArray?) -> Unit) {
@@ -298,7 +136,7 @@ object Exporter {
         webView.settings.javaScriptEnabled = true
         // Lay out at the export width BEFORE loading — the print engine does
         // its own pagination layout, but the diagram engines' text
-        // measurement still wants a real viewport (as in renderSinglePdf).
+        // measurement still wants a real viewport.
         webView.measure(
             View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(widthPx * 842 / PAGE_WIDTH_PT, View.MeasureSpec.EXACTLY),
@@ -367,7 +205,7 @@ object Exporter {
         }
     }
 
-    /** Render the document to a PDF (per the [PdfLayout] setting) and offer
+    /** Render the document to a PDF and offer
      *  it through the system share sheet. The file is staged under
      *  `cacheDir/exports` and exposed to the chosen app via FileProvider
      *  with a one-off read grant. Failures surface as a toast — silently

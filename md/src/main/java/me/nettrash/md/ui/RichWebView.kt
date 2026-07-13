@@ -8,23 +8,26 @@
  * the exported document and gains the rich renderers — LaTeX math (KaTeX),
  * Mermaid, PlantUML — that run from bundled assets under `assets/rich/`.
  *
- * Everything is offline. `MdAssetWebViewClient` serves the document HTML and
- * the bundled `rich/` assets over a private `https://appassets.androidplatform.net`
- * origin (a reserved, non-resolvable host); that real origin — rather than a
- * `loadDataWithBaseURL` opaque origin — is what lets `md-init.js`'s ES-module
- * import of the PlantUML engine resolve. The app declares no INTERNET
- * permission, so "offline" is structurally guaranteed regardless.
+ * The renderers are offline. `MdAssetWebViewClient` serves the document HTML
+ * and the bundled `rich/` assets over a private
+ * `https://appassets.androidplatform.net` origin (a reserved, non-resolvable
+ * host); that real origin — rather than a `loadDataWithBaseURL` opaque
+ * origin — is what lets `md-init.js`'s ES-module import of the PlantUML
+ * engine resolve. The app's one use of the network is images the document
+ * itself references (the INTERNET permission exists solely for them).
  */
 
 package me.nettrash.md.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.content.res.AssetManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -97,6 +100,46 @@ open class MdAssetWebViewClient(
 data class PreviewNavigation(val id: Long, val slug: String)
 
 /**
+ * The preview's WebView with its half of the Split scroll sync: it reports
+ * the reader's scrolls as fractions of the scrollable range and follows the
+ * editor on request. Programmatic scrolls — the sync's own relays, the
+ * anchor jumps, the reload restore — mark themselves first (a short
+ * timestamp window; the JS-driven ones land asynchronously, so a plain
+ * flag can't cover them) and are never reported back: that one-way gate is
+ * the whole feedback-loop guard.
+ */
+class SyncWebView(context: Context) : WebView(context) {
+
+    /** Reports the fraction [0, 1] of a scroll the *reader* made. */
+    var onUserScroll: ((Float) -> Unit)? = null
+
+    private var programmaticUntil = 0L
+
+    /** The scrollable range in view pixels; <= 0 when the content fits. */
+    private fun maxScroll(): Int = computeVerticalScrollRange() - height
+
+    /** The next ~300 ms of scroll events are ours, not the reader's. */
+    fun markProgrammatic() {
+        programmaticUntil = SystemClock.uptimeMillis() + 300
+    }
+
+    /** Follow the editor to [fraction] of this pane's range. */
+    fun scrollToFraction(fraction: Float) {
+        val max = maxScroll()
+        if (max <= 0) return
+        markProgrammatic()
+        scrollTo(0, (fraction.coerceIn(0f, 1f) * max).toInt())
+    }
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        if (SystemClock.uptimeMillis() < programmaticUntil) return
+        val max = maxScroll()
+        if (max > 0) onUserScroll?.invoke((t.toFloat() / max).coerceIn(0f, 1f))
+    }
+}
+
+/**
  * The preview WebView. Loads immediately, then debounces reloads on text/theme
  * change so live typing in Split mode doesn't reload (and re-run the diagram
  * engines) on every keystroke. Scroll position is preserved across reloads.
@@ -114,6 +157,7 @@ fun RichPreview(
     title: String,
     modifier: Modifier = Modifier,
     navigation: PreviewNavigation? = null,
+    scrollSync: ScrollSync? = null,
 ) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
@@ -122,7 +166,7 @@ fun RichPreview(
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
-            WebView(ctx).apply {
+            SyncWebView(ctx).apply {
                 settings.javaScriptEnabled = true            // bundled engines; net = doc images only
                 setBackgroundColor(Color.TRANSPARENT)        // let the CSS paper show
                 webViewClient = object : MdAssetWebViewClient(ctx.assets, { state.html }) {
@@ -146,6 +190,11 @@ fun RichPreview(
             }
         },
         update = { webView ->
+            // (Re-)wire the pane link on every update, so the freshest
+            // composition owns the closures — a null sync (single-pane
+            // modes) simply reports nowhere.
+            webView.onUserScroll = scrollSync?.let { sync -> { f -> sync.previewDidScroll(f) } }
+            scrollSync?.scrollPreview = { f -> webView.scrollToFraction(f) }
             state.render(webView, MarkdownHtml.document(text, title, dark))
             navigation?.let { state.navigate(webView, it) }
         },
@@ -185,6 +234,10 @@ private class PreviewState {
             val work = Runnable {
                 webView.evaluateJavascript("window.scrollY") { value ->
                     savedScrollY = value?.toFloatOrNull()?.toInt() ?: 0
+                    // The reload cycle emits scrolls of its own (the
+                    // commit-time reset, Chromium's native restoration) —
+                    // none of them the reader's.
+                    (webView as? SyncWebView)?.markProgrammatic()
                     webView.reload()
                 }
             }
@@ -214,8 +267,17 @@ private class PreviewState {
     fun onPageFinished(view: WebView) {
         pageReady = true
         reloadPending = false
+        // Everything the load's tail end does to the scroll position is
+        // programmatic (see SyncWebView) — none of it must read as the
+        // reader's hand and yank the editor around.
+        (view as? SyncWebView)?.markProgrammatic()
         if (savedScrollY > 0) {
-            view.evaluateJavascript("window.scrollTo(0, $savedScrollY)", null)
+            view.evaluateJavascript("window.scrollTo(0, $savedScrollY)") {
+                // The script queues behind md-init.js's diagram work, which
+                // can outlast the mark's window on a rich document — re-arm
+                // once the renderer has actually run it (this callback).
+                (view as? SyncWebView)?.markProgrammatic()
+            }
         }
         pendingSlug?.let { slug ->
             pendingSlug = null
@@ -227,7 +289,13 @@ private class PreviewState {
 /** Scroll the page so the element with id [slug] is at the top. Slugs keep
  *  only letters, digits, "-" and "_" (see `MarkdownParser.slug`) — no quote,
  *  backslash or other JS metacharacter survives — so interpolating one into
- *  the script cannot break out of the string literal. */
+ *  the script cannot break out of the string literal. Marked programmatic:
+ *  in Split, the sync must not mistake the jump for the reader's hand. */
 private fun scrollToAnchor(webView: WebView, slug: String) {
-    webView.evaluateJavascript("document.getElementById('$slug')?.scrollIntoView(true)", null)
+    (webView as? SyncWebView)?.markProgrammatic()
+    webView.evaluateJavascript("document.getElementById('$slug')?.scrollIntoView(true)") {
+        // Re-arm at execution time too — the script can queue behind the
+        // diagram engines and land after the first window expires.
+        (webView as? SyncWebView)?.markProgrammatic()
+    }
 }

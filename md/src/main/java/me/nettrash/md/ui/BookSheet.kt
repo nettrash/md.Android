@@ -226,10 +226,9 @@ fun BookSheet(
     )
 
     // Share the whole book as one PDF: compile it on IO (title page +
-    // chapters + articles, each on its own page — see compileBook), then
-    // hand the combined Markdown to the same share pipeline a document
-    // uses; Exporter honors the PDF layout setting and toasts render
-    // failures itself.
+    // chapters + articles, each starting a fresh A4 page — see
+    // compileBook), then hand the combined Markdown to the same share
+    // pipeline a document uses; Exporter toasts render failures itself.
     fun shareBookPdf() {
         val current = tree ?: return
         scope.launch {

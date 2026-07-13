@@ -33,11 +33,17 @@ object MarkdownHtml {
      *
      * [export] styles the document for paper / PDF instead of the live
      * preview: a smaller, print-typical body size (everything else is
-     * em-based and scales with it), and code blocks wrap long lines —
-     * paper can't scroll, so an overflowing line would be clipped at the
-     * block's edge.
+     * em-based and scales with it), code blocks wrap long lines — paper
+     * can't scroll, so an overflowing line would be clipped at the block's
+     * edge — and the page is plain white in the light palette regardless
+     * of [dark]: the tinted paper and cream-on-carbon ink are screen
+     * themes, not something to fix into a printout.
      */
     fun document(source: String, title: String, dark: Boolean, export: Boolean = false): String {
+        // Deliberate shadow, mirroring the Apple siblings'
+        // `let dark = dark && !export`.
+        @Suppress("NAME_SHADOWING")
+        val dark = dark && !export
         val blocks = MarkdownParser.parse(source)
         // Top-level headings carry a GitHub-style anchor id, so `[…](#slug)`
         // links navigate and the table of contents can scroll the preview.
@@ -268,7 +274,14 @@ object MarkdownHtml {
     // MARK: - CSS
 
     private fun css(dark: Boolean, export: Boolean): String {
-        val paper = if (dark) "#241E18" else "#F4EFE2"
+        // On paper the page keeps its own single color: the paper tint is a
+        // screen theme, and a content-height background would end mid-page
+        // next to the white A4 margins.
+        val paper = when {
+            export -> "#FFFFFF"
+            dark -> "#241E18"
+            else -> "#F4EFE2"
+        }
         val ink = if (dark) "#E7DBC2" else "#2B2620"
         val secondary = if (dark) "#2F2820" else "#EAE2CF"
         val accent = if (dark) "#C99A55" else "#9C6B2E"
@@ -276,8 +289,8 @@ object MarkdownHtml {
         val border = if (dark) "rgba(231,219,194,0.16)" else "rgba(43,38,32,0.16)"
         val scheme = if (dark) "dark" else "light"
         return """
-            /* Force backgrounds to render in print / PDF so the chosen theme
-               (including the dark paper) survives, rather than being dropped. */
+            /* Force backgrounds to render in print / PDF so the content chrome
+               (code blocks, table headers) survives, rather than being dropped. */
             * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
             :root { color-scheme: $scheme; }
             html, body { background: $paper; }

@@ -179,17 +179,10 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         true
     }.getOrDefault(false)
 
-    /** Decode bytes as text. UTF-8 first (the Markdown convention), then a
-     *  couple of common fallbacks, mirroring the iOS strict-decode order. */
-    private fun decodeText(data: ByteArray): String {
-        for (charset in listOf(Charsets.UTF_8, Charsets.UTF_16, Charsets.ISO_8859_1)) {
-            runCatching {
-                val decoder = charset.newDecoder()
-                return decoder.decode(java.nio.ByteBuffer.wrap(data)).toString()
-            }
-        }
-        return String(data, Charsets.UTF_8)
-    }
+    /** Decode bytes as text — see [TextCodec] for the (BOM-aware) trial
+     *  order, shared in spirit with the iOS/macOS siblings and pure so the
+     *  JVM tests can pin it. */
+    private fun decodeText(data: ByteArray): String = TextCodec.decode(data)
 
     private fun queryName(target: Uri): String? = runCatching {
         resolver.query(target, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
