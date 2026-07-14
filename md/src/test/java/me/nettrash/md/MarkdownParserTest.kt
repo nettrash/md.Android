@@ -251,7 +251,7 @@ class MarkdownParserTest {
         val html = MarkdownHtml.document("# Title", "Doc", dark = false)
         assertTrue(html.contains("<!DOCTYPE html>"))
         assertTrue(html.contains("<title>Doc</title>"))
-        assertTrue(html.contains("<h1>Title</h1>"))
+        assertTrue(html.contains("<h1 id=\"title\">Title</h1>"))
     }
 
     @Test fun htmlEscapesSpecialCharacters() {
@@ -275,6 +275,34 @@ class MarkdownParserTest {
     @Test fun htmlLink() {
         val html = MarkdownHtml.document("[site](https://nettrash.me)", "t", dark = false)
         assertTrue(html.contains("<a href=\"https://nettrash.me\">site</a>"))
+    }
+
+    @Test fun htmlLinkWithTitle() {
+        val html = MarkdownHtml.document("[site](https://nettrash.me \"Hover title\")", "t", dark = false)
+        assertTrue(html.contains("<a href=\"https://nettrash.me\" title=\"Hover title\">site</a>"))
+    }
+
+    @Test fun htmlImage() {
+        val html = MarkdownHtml.document("![Alt text](https://nettrash.me/favicon.ico)", "t", dark = false)
+        assertTrue(html.contains("<img src=\"https://nettrash.me/favicon.ico\" alt=\"Alt text\">"))
+    }
+
+    @Test fun htmlImageWithTitle() {
+        val html = MarkdownHtml.document("![Alt](https://nettrash.me/favicon.ico \"The favicon\")", "t", dark = false)
+        assertTrue(html.contains("<img src=\"https://nettrash.me/favicon.ico\" alt=\"Alt\" title=\"The favicon\">"))
+    }
+
+    @Test fun htmlLinkedImage() {
+        // The image pass must run before the link pass, so `[![…](…)](…)`
+        // nests the <img> inside the <a> instead of the link eating the label.
+        val html = MarkdownHtml.document(
+            "[![badge](https://nettrash.me/favicon.ico)](https://nettrash.me)", "t", dark = false,
+        )
+        assertTrue(
+            html.contains(
+                "<a href=\"https://nettrash.me\"><img src=\"https://nettrash.me/favicon.ico\" alt=\"badge\"></a>",
+            ),
+        )
     }
 
     @Test fun htmlUnderscoreInWordIsNotItalic() {
@@ -356,5 +384,112 @@ class MarkdownParserTest {
     @Test fun htmlCodeSpanDollarIsNotMath() {
         val html = MarkdownHtml.document("use `\$x\$` here", "t", dark = false)
         assertTrue(html.contains("<code>\$x\$</code>"))
+    }
+
+    // MARK: Page breaks, notes & outline
+
+    @Test fun pageBreakParses() {
+        val blocks = MarkdownParser.parse("before\n\n\\newpage\n\nafter")
+        assertEquals(3, blocks.size)
+        assertTrue(blocks[1] is MarkdownBlock.PageBreak)
+    }
+
+    @Test fun pageBreakVariantInterruptsParagraph() {
+        // `\pagebreak` works too, and a marker interrupts a paragraph run.
+        val blocks = MarkdownParser.parse("line one\n\\pagebreak\nline two")
+        assertEquals(3, blocks.size)
+        assertTrue(blocks[1] is MarkdownBlock.PageBreak)
+    }
+
+    @Test fun noteCommentBecomesNoteBlock() {
+        val blocks = MarkdownParser.parse("<!-- note: check the intro -->")
+        assertEquals(1, blocks.size)
+        assertEquals("check the intro", (blocks[0] as MarkdownBlock.Note).text)
+    }
+
+    @Test fun plainCommentIsDropped() {
+        // A non-note HTML comment vanishes entirely — no block, no output.
+        val blocks = MarkdownParser.parse("a\n\n<!-- just a comment -->\n\nb")
+        assertEquals(2, blocks.size)
+    }
+
+    @Test fun multilineNote() {
+        val blocks = MarkdownParser.parse("<!-- note: first\nsecond -->")
+        val note = blocks.first() as MarkdownBlock.Note
+        assertTrue(note.text.contains("first"))
+        assertTrue(note.text.contains("second"))
+    }
+
+    @Test fun outlineLevelsSlugsAndLines() {
+        val source = "# One\n\ntext\n\n## Two\n\n```\n# not a heading\n```\n\nSetext\n---"
+        val outline = MarkdownParser.outline(source)
+        assertEquals(3, outline.size)
+        assertEquals(1, outline[0].level)
+        assertEquals("one", outline[0].slug)
+        assertEquals(0, outline[0].line)
+        assertEquals("two", outline[1].slug)
+        assertEquals(2, outline[2].level)            // setext `---` underline
+        assertEquals("Setext", outline[2].text)
+        assertEquals(10, outline[2].line)
+    }
+
+    @Test fun duplicateHeadingSlugsAreDeduped() {
+        val outline = MarkdownParser.outline("# Same\n\n# Same")
+        assertEquals(listOf("same", "same-1"), outline.map { it.slug })
+    }
+
+    @Test fun outlineSkipsUnderlineAfterMultiLineParagraph() {
+        // `---` after a 2+-line paragraph is a rule, not a setext heading —
+        // parse() and outline() must agree, or the Contents menu would list
+        // a phantom entry and desync every later anchor slug.
+        assertTrue(MarkdownParser.outline("line1\nline2\n---").isEmpty())
+        assertEquals(1, MarkdownParser.outline("only\n---").size)
+    }
+
+    @Test fun slugDropsPunctuationLikeGitHub() {
+        assertEquals("c--f", MarkdownParser.slug("C# & F#!", HashMap()))
+    }
+
+    @Test fun notesHelperFindsLine() {
+        val notes = MarkdownParser.notes("start\n\n<!-- note: fix me -->\n\nend")
+        assertEquals(1, notes.size)
+        assertEquals("fix me", notes[0].text)
+        assertEquals(2, notes[0].line)
+    }
+
+    @Test fun htmlHeadingsCarryAnchorIds() {
+        val html = MarkdownHtml.document("# My Title\n\n# My Title", "t", dark = false)
+        assertTrue(html.contains("<h1 id=\"my-title\">"))
+        assertTrue(html.contains("<h1 id=\"my-title-1\">"))
+    }
+
+    @Test fun htmlPageBreakMarkerAndExportCss() {
+        val preview = MarkdownHtml.document("a\n\n\\newpage\n\nb", "t", dark = false)
+        assertTrue(preview.contains("md-pagebreak"))
+        assertFalse(preview.contains("break-after: page"))
+        val export = MarkdownHtml.document("a\n\n\\newpage\n\nb", "t", dark = false, export = true)
+        assertTrue(export.contains("break-after: page"))
+    }
+
+    @Test fun htmlOmitsAuthorNotes() {
+        val html = MarkdownHtml.document("visible\n\n<!-- note: secret draft thought -->", "t", dark = false)
+        assertTrue(html.contains("visible"))
+        assertFalse(html.contains("secret draft thought"))
+    }
+
+    @Test fun exportPageIsPlainWhiteAndAlwaysLight() {
+        // Print / PDF pages keep their own single color: no paper tint
+        // (which would end mid-page next to the white A4 margins), and the
+        // light palette even from a dark device — dark cream-on-carbon is
+        // a screen theme, unreadable as cream-on-white.
+        val export = MarkdownHtml.document("hello", "t", dark = true, export = true)
+        assertTrue("plain white page", export.contains("background: #FFFFFF"))
+        assertTrue("always light", export.contains("color-scheme: light"))
+        assertFalse("no dark paper in an export", export.contains("#241E18"))
+        assertTrue("Mermaid sees light mode too", export.contains("data-md-dark=\"0\""))
+        // The on-screen preview still honors the device's appearance.
+        val preview = MarkdownHtml.document("hello", "t", dark = true)
+        assertTrue(preview.contains("background: #241E18"))
+        assertTrue(preview.contains("data-md-dark=\"1\""))
     }
 }

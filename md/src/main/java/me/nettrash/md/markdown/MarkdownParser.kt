@@ -30,6 +30,8 @@ sealed interface MarkdownBlock {
         val rows: List<List<String>>,
     ) : MarkdownBlock
     data object ThematicBreak : MarkdownBlock
+    data object PageBreak : MarkdownBlock
+    data class Note(val text: String) : MarkdownBlock
 }
 
 /** A single list row. `level` is the indentation depth (0 = top level);
@@ -39,6 +41,23 @@ data class ListItem(
     val level: Int,
     val ordinal: Int?,
     val task: Boolean?,
+)
+
+/** One table-of-contents entry. `line` is the 0-based source line of the
+ *  heading, so the editor can jump to it; `slug` matches the `id` the HTML
+ *  renderer gives the same heading, so the preview can scroll to it. */
+data class OutlineEntry(
+    val level: Int,
+    val text: String,
+    val slug: String,
+    val line: Int,
+)
+
+/** One private author note (`<!-- note: … -->`). `line` is the 0-based
+ *  source line the note starts on, so the notes panel can jump to it. */
+data class NoteEntry(
+    val text: String,
+    val line: Int,
 )
 
 enum class ColumnAlignment { LEADING, CENTER, TRAILING }
@@ -83,6 +102,33 @@ object MarkdownParser {
             if (isThematicBreak(line)) {
                 blocks.add(MarkdownBlock.ThematicBreak)
                 i++
+                continue
+            }
+
+            // Page break: a line of exactly `\newpage` (or `\pagebreak`),
+            // the Pandoc convention — where the author says a page ends.
+            // Shown as a subtle divider in the preview; starts a new page
+            // in print and in the shared / exported PDF.
+            if (isPageBreak(line)) {
+                blocks.add(MarkdownBlock.PageBreak)
+                i++
+                continue
+            }
+
+            // HTML comment block: `<!-- … -->`, possibly spanning lines.
+            // A `<!-- note: … -->` comment is the author's private note —
+            // kept as a block so the notes panel can list it. Any other
+            // comment is simply dropped. Neither appears in the preview,
+            // the PDF, or print.
+            if (isCommentStart(line)) {
+                val raw = ArrayList<String>()
+                while (i < lines.size) {
+                    raw.add(lines[i])
+                    val closed = lines[i].contains("-->")
+                    i++
+                    if (closed) break
+                }
+                noteText(raw.joinToString("\n"))?.let { blocks.add(MarkdownBlock.Note(it)) }
                 continue
             }
 
@@ -139,7 +185,8 @@ object MarkdownParser {
                         val l = lines[i]
                         if (l.trimSpaces().isEmpty()) break
                         if (listMarker(l) != null || FenceMarker.from(l) != null ||
-                            isThematicBreak(l) || parseHeading(l) != null || isQuote(l)
+                            isThematicBreak(l) || parseHeading(l) != null || isQuote(l) ||
+                            isPageBreak(l) || isCommentStart(l)
                         ) break
                         if (i + 1 < lines.size && parseTable(l, lines[i + 1]) != null) break
                         text += " " + l.trimSpaces()
@@ -170,7 +217,8 @@ object MarkdownParser {
                     }
                 }
                 if (FenceMarker.from(l) != null || isThematicBreak(l) || parseHeading(l) != null ||
-                    isQuote(l) || listMarker(l) != null
+                    isQuote(l) || listMarker(l) != null ||
+                    isPageBreak(l) || isCommentStart(l)
                 ) break
                 paragraph.add(l)
                 i++
@@ -220,6 +268,188 @@ object MarkdownParser {
         if (t.all { it == '-' }) return 2
         return null
     }
+
+    // MARK: - Page breaks & comments
+
+    /** A page break: a line whose only content is `\newpage` or
+     *  `\pagebreak` (the Pandoc / LaTeX conventions). */
+    private fun isPageBreak(line: String): Boolean {
+        val t = line.trimSpaces()
+        return t == "\\newpage" || t == "\\pagebreak"
+    }
+
+    /** A line that opens an HTML comment block. */
+    private fun isCommentStart(line: String): Boolean =
+        line.dropWhile { it == ' ' }.startsWith("<!--")
+
+    /** `<!-- note: … -->` → the note's text; any other comment → null. */
+    private fun noteText(comment: String): String? {
+        val open = comment.indexOf("<!--")
+        if (open < 0) return null
+        val closeIndex = comment.indexOf("-->")
+        val close = if (closeIndex >= 0) closeIndex else comment.length
+        if (open + 4 > close) return null
+        val body = comment.substring(open + 4, close).trim()
+        if (!body.lowercase().startsWith("note:")) return null
+        return body.substring(5).trim()
+    }
+
+    // MARK: - Outline, notes & anchors
+
+    /** The document's table of contents: every ATX / setext heading outside
+     *  a code fence, with the source line and the same anchor slug the HTML
+     *  renderer assigns. Line-oriented like [parse], so it stays cheap
+     *  enough to recompute whenever the TOC is shown. */
+    fun outline(source: String): List<OutlineEntry> {
+        val lines = normalizedLines(source)
+        val entries = ArrayList<OutlineEntry>()
+        val used = HashMap<String, Int>()
+        var fence: FenceMarker? = null
+        var previousPlain: Pair<String, Int>? = null
+        // How many plain lines ran up to `previousPlain`. [parse] only treats
+        // an underline as setext when the buffered paragraph has exactly ONE
+        // line; the outline must apply the same rule, or it would list
+        // headings the rendered document doesn't have (and their phantom
+        // slugs would shift every later anchor).
+        var plainRun = 0
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i]
+            val openFence = fence
+            if (openFence != null) {
+                if (openFence.closes(line)) fence = null
+                previousPlain = null
+                plainRun = 0
+                i++
+                continue
+            }
+            val newFence = FenceMarker.from(line)
+            if (newFence != null) {
+                fence = newFence
+                previousPlain = null
+                plainRun = 0
+                i++
+                continue
+            }
+            if (isCommentStart(line)) {
+                while (i < lines.size && !lines[i].contains("-->")) i++
+                previousPlain = null
+                plainRun = 0
+                i++
+                continue
+            }
+            val heading = parseHeading(line)
+            if (heading != null) {
+                entries.add(OutlineEntry(heading.first, heading.second,
+                    slug(heading.second, used), i))
+                previousPlain = null
+                plainRun = 0
+                i++
+                continue
+            }
+            // Setext heading: exactly one plain buffered line underlined by
+            // === / --- (a longer run is a paragraph; [parse] then reads the
+            // underline as a rule / plain text, and so must we).
+            val previous = previousPlain
+            val level = setextUnderline(line)
+            if (previous != null && plainRun == 1 && level != null) {
+                entries.add(OutlineEntry(level, previous.first,
+                    slug(previous.first, used), previous.second))
+                previousPlain = null
+                plainRun = 0
+                i++
+                continue
+            }
+            val trimmed = line.trimSpaces()
+            val isPlain = trimmed.isNotEmpty() && !isThematicBreak(line) && !isQuote(line) &&
+                listMarker(line) == null && !isPageBreak(line)
+            plainRun = if (isPlain) plainRun + 1 else 0
+            previousPlain = if (isPlain) trimmed to i else null
+            i++
+        }
+        return entries
+    }
+
+    /** Every private author note in the document, with its source line. */
+    fun notes(source: String): List<NoteEntry> {
+        val lines = normalizedLines(source)
+        val entries = ArrayList<NoteEntry>()
+        var fence: FenceMarker? = null
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i]
+            val openFence = fence
+            if (openFence != null) {
+                if (openFence.closes(line)) fence = null
+                i++
+                continue
+            }
+            val newFence = FenceMarker.from(line)
+            if (newFence != null) {
+                fence = newFence
+                i++
+                continue
+            }
+            if (isCommentStart(line)) {
+                val start = i
+                val raw = ArrayList<String>()
+                while (i < lines.size) {
+                    raw.add(lines[i])
+                    val closed = lines[i].contains("-->")
+                    i++
+                    if (closed) break
+                }
+                noteText(raw.joinToString("\n"))?.let { entries.add(NoteEntry(it, start)) }
+                continue
+            }
+            i++
+        }
+        return entries
+    }
+
+    /** GitHub-style anchor slug for a heading, unique within one document
+     *  via the caller-maintained `used` counts ("title", "title-1", …).
+     *  Keeps letters, numbers, `_` and `-`; spaces become hyphens; all other
+     *  punctuation (including inline-markup characters) is dropped — the
+     *  same rule GitHub applies, so links written for GitHub keep working.
+     *
+     *  Iterates CODE POINTS with the full Unicode categories the Swift
+     *  original sees per grapheme — letters, every number category (Nd, Nl,
+     *  No: digits, Roman numerals, fractions) and combining marks (so an
+     *  NFD "café" keeps its accent) — because a per-`Char` walk would drop
+     *  surrogate-pair letters and non-decimal numbers, and the two parsers'
+     *  anchors must be byte-identical across platforms. */
+    fun slug(text: String, used: MutableMap<String, Int>): String {
+        val base = StringBuilder()
+        var i = 0
+        val lower = text.lowercase()
+        while (i < lower.length) {
+            val cp = lower.codePointAt(i)
+            val type = Character.getType(cp)
+            val isNumber = type == Character.DECIMAL_DIGIT_NUMBER.toInt() ||
+                type == Character.LETTER_NUMBER.toInt() ||
+                type == Character.OTHER_NUMBER.toInt()
+            val isMark = type == Character.NON_SPACING_MARK.toInt() ||
+                type == Character.COMBINING_SPACING_MARK.toInt() ||
+                type == Character.ENCLOSING_MARK.toInt()
+            when {
+                Character.isLetter(cp) || isNumber || isMark ||
+                    cp == '_'.code || cp == '-'.code -> base.appendCodePoint(cp)
+                cp == ' '.code -> base.append('-')
+            }
+            i += Character.charCount(cp)
+        }
+        var slug = base.toString()
+        if (slug.isEmpty()) slug = "section"
+        val seen = used[slug] ?: 0
+        used[slug] = seen + 1
+        return if (seen == 0) slug else "$slug-$seen"
+    }
+
+    /** Source split into terminator-free lines, with line endings normalised
+     *  the same way [parse] does — so [outline] / [notes] line numbers match. */
+    private fun normalizedLines(source: String): List<String> =
+        source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
     // MARK: - Thematic break
 

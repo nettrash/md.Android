@@ -2,9 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- No permissions: documents are read and written through the Storage
-         Access Framework (the user picks each file), which grants access
-         without any storage permission. The app makes no network calls. -->
+    <!-- Documents are read and written through the Storage Access Framework
+         (the user picks each file), which grants access without any storage
+         permission. INTERNET exists for exactly one thing: the preview
+         WebView fetching images a document references by remote URL. The
+         app itself makes no network calls and sends nothing anywhere. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
@@ -47,6 +50,19 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- Grants the share sheet one-off read access to the PDFs staged
+             under cacheDir/exports ("Share Rendered PDF"); nothing else in
+             the app's storage is exposed. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

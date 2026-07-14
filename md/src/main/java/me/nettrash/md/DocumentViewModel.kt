@@ -19,6 +19,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class DocumentViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -47,16 +53,52 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
 
     private val resolver get() = getApplication<Application>().contentResolver
 
-    /** Editor keystroke — update the buffer and mark it dirty. */
+    private var autosave: Job? = null
+
+    /** Editor keystroke — update the buffer, mark it dirty, and schedule
+     *  the autosave. */
     fun onTextChange(new: String) {
         if (new != text) {
             text = new
             isDirty = true
+            scheduleAutosave()
+        }
+    }
+
+    /** Autosave: write the buffer once typing pauses for a moment, so the
+     *  file on disk is never more than a beat behind the editor — matching
+     *  the iOS / macOS system autosave. Debounced rather than per-keystroke
+     *  so fast typing doesn't hammer the documents provider; only fires
+     *  when there's a writable target (a brand-new document has nowhere to
+     *  write until the user picks a location with Save).
+     *
+     *  The write itself runs on Dispatchers.IO — a slow or cloud documents
+     *  provider must not freeze the editor at every typing pause — against
+     *  a snapshot of the buffer taken on Main. Back on Main the buffer is
+     *  marked clean only if the write landed *and* nothing changed while it
+     *  was in flight, so later edits stay dirty for the next autosave. */
+    private fun scheduleAutosave() {
+        autosave?.cancel()
+        autosave = viewModelScope.launch {
+            delay(1_000)
+            if (!isDirty || !canWrite) return@launch
+            val target = uri ?: return@launch
+            val snapshot = text
+            val written = withContext(Dispatchers.IO) {
+                runCatching {
+                    // "wt" truncates, like `write` — no stale tail bytes.
+                    resolver.openOutputStream(target, "wt")?.use {
+                        it.write(snapshot.toByteArray(Charsets.UTF_8))
+                    } != null
+                }.getOrDefault(false)
+            }
+            if (written && text == snapshot) isDirty = false
         }
     }
 
     /** Start a fresh, never-saved document. */
     fun newDocument() {
+        autosave?.cancel()   // a stale save must not chase the old document
         text = ""
         uri = null
         displayName = "Untitled"
@@ -66,6 +108,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Open shared text (ACTION_SEND) as a new untitled document. */
     fun acceptSharedText(shared: String) {
+        autosave?.cancel()   // a stale save must not chase the old document
         text = shared
         uri = null
         displayName = "Untitled"
@@ -77,6 +120,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  a read-write grant (our own Open / Create flows) or read-only
      *  (a file handed in via ACTION_VIEW). */
     fun load(target: Uri, writable: Boolean) {
+        autosave?.cancel()   // a stale save must not chase the old document
         val decoded = runCatching {
             resolver.openInputStream(target)?.use { it.readBytes() }
         }.getOrNull() ?: return
@@ -85,6 +129,28 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         displayName = queryName(target) ?: target.lastPathSegment ?: "Untitled"
         canWrite = writable
         isDirty = false
+    }
+
+    /** [load], but with the provider I/O (the read and the DISPLAY_NAME
+     *  query) on Dispatchers.IO — book articles can live on slow or cloud
+     *  documents providers, and opening one must not stall the UI. State
+     *  lands back on Main; a failed read leaves the current document
+     *  untouched, like [load]. */
+    fun loadAsync(target: Uri, writable: Boolean) {
+        autosave?.cancel()   // a stale save must not chase the old document
+        viewModelScope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                val bytes = runCatching {
+                    resolver.openInputStream(target)?.use { it.readBytes() }
+                }.getOrNull() ?: return@withContext null
+                decodeText(bytes) to (queryName(target) ?: target.lastPathSegment ?: "Untitled")
+            } ?: return@launch
+            text = loaded.first
+            uri = target
+            displayName = loaded.second
+            canWrite = writable
+            isDirty = false
+        }
     }
 
     /** Adopt a URI from Create Document and write the current text into it. */
@@ -113,17 +179,10 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         true
     }.getOrDefault(false)
 
-    /** Decode bytes as text. UTF-8 first (the Markdown convention), then a
-     *  couple of common fallbacks, mirroring the iOS strict-decode order. */
-    private fun decodeText(data: ByteArray): String {
-        for (charset in listOf(Charsets.UTF_8, Charsets.UTF_16, Charsets.ISO_8859_1)) {
-            runCatching {
-                val decoder = charset.newDecoder()
-                return decoder.decode(java.nio.ByteBuffer.wrap(data)).toString()
-            }
-        }
-        return String(data, Charsets.UTF_8)
-    }
+    /** Decode bytes as text — see [TextCodec] for the (BOM-aware) trial
+     *  order, shared in spirit with the iOS/macOS siblings and pure so the
+     *  JVM tests can pin it. */
+    private fun decodeText(data: ByteArray): String = TextCodec.decode(data)
 
     private fun queryName(target: Uri): String? = runCatching {
         resolver.query(target, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
