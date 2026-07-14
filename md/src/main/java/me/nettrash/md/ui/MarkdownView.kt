@@ -94,6 +94,14 @@ private fun BlockView(block: MarkdownBlock) {
 
         MarkdownBlock.ThematicBreak ->
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        // The author's `\newpage` — a divider marking where an exported
+        // page ends. (This renderer is retired from the preview path.)
+        MarkdownBlock.PageBreak ->
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        // Private author notes are never rendered.
+        is MarkdownBlock.Note -> Unit
     }
 }
 

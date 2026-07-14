@@ -1,39 +1,43 @@
-md is a Markdown editor with the soul of a typewriter — warm paper, a serif face, and nothing between you and the text. Write on one side and watch the rendered page on the other, or go full-screen in either direction.
-
-It is the Android edition of the md editor for iPhone, iPad and Mac. All three share the same hand-written renderer, so a document looks the same on every screen you own.
+md is a Markdown editor with the soul of a typewriter — warm paper, a serif face, and nothing between you and the text. Write on one side and watch the rendered page on the other, or go full-screen in either direction. Then print it, export it as a PDF, or turn a folder of chapters into a whole book.
 
 THREE LAYOUTS
 
 • Edit — a full-screen, distraction-free editor.
-• Split — editor and preview side by side, re-rendering live as you type. Offered on wide screens (tablets, unfolded foldables, landscape); it stacks when the window gets narrow.
+• Split — editor and preview side by side, re-rendering live as you type, and scrolling as one: move either pane and the other follows. Offered on wide screens (tablets, unfolded foldables, landscape); it stacks when the window gets narrow.
 • Preview — just the rendered page.
 
-The segmented control in the app bar remembers your choice. A phone-width screen offers Edit and Preview; your remembered Split returns as soon as the window is wide again.
+The segmented control in the app bar remembers your choice. A phone-width screen offers Edit and Preview; your remembered Split returns as soon as the window is wide again. A live word and character count sits under every page.
+
+THE MARKDOWN YOU ACTUALLY WRITE
+
+• Headings, bold, italic, inline code, links and strikethrough
+• Bullet, numbered and task lists, with nesting
+• Fenced code blocks, block quotes, tables with column alignment, thematic breaks
+• Images, including ones your document points at by URL
+• LaTeX math, Mermaid graphs and PlantUML diagrams, drawn on your device by engines built into the app
+• A table of contents that jumps the preview to any heading
+• Private author notes — an HTML comment on its own line whose text begins with “note:” — listed in a Notes panel, and never rendered into the page, the PDF or the printout
+
+WRITER MODE: BOOKS
+
+• A book is simply a folder you pick: its subfolders are chapters, its Markdown files are articles, ordered by name.
+• Open any article to write it, and create new chapters and articles in place. Rename, reorder and delete them from the row menu — the order is written back to the file names, so it stays true in your file manager.
+• Compile the whole book into one PDF, or export it as a standard EPUB 3 with a proper table of contents — math and diagrams travel with it as images.
+
+PRINT AND PDF
+
+• Share or export the rendered document as real A4 pages: pagination is line-aware, so no line of text is sliced at a page boundary, and \newpage on its own line starts a fresh page wherever you decide.
+• Pages come out white with dark ink, whatever theme you write in. Or print through the system print dialog.
+• Share the raw Markdown source through the share sheet instead, whenever that is what you need.
 
 YOUR FILES, ANYWHERE
 
 md is document-based, built on Android's Storage Access Framework:
 
-• Open, create and save .md / .markdown files in any location the system file picker can reach — device storage, SD card, or any cloud provider that plugs into it.
-• Plain-text files open and round-trip too.
+• Open, create and save .md / .markdown / .txt files in any location the system file picker can reach — device storage, SD card, or any cloud provider that plugs into it.
 • "Open with md" from your file manager, or share text into md from any app.
-• Your work is saved automatically when you leave the app.
-
-THE MARKDOWN YOU ACTUALLY WRITE
-
-The built-in renderer covers everyday Markdown:
-
-• Headings (# through ######)
-• Bold, italic, inline code, links and strikethrough
-• Bullet, numbered and task lists (- [ ] / - [x]), with nesting
-• Fenced code blocks (``` and ~~~), horizontally scrollable
-• Block quotes, including nested ones
-• GitHub-style tables with column alignment
-• Thematic breaks
-
-PRINT & PDF
-
-Print the rendered document through the system print dialog — its "Save as PDF" target exports a themed PDF that matches light or dark mode. Or share the raw Markdown source through the share sheet.
+• Your work is saved as you write, and again when you leave the app.
+• Built-in examples, including a small sample book, show everything the app can do.
 
 TYPEWRITER FEEL
 
@@ -41,8 +45,10 @@ Warm paper backgrounds — "fresh paper" in light mode, "carbon paper" in dark �
 
 PRIVATE BY DESIGN
 
-md requests ZERO permissions and does not even declare the INTERNET permission — the app is technically incapable of sending anything anywhere. Your documents are read and written only through the system file picker and live wherever you keep them. No accounts, no telemetry, no advertising SDKs, no trackers, no third-party libraries.
+md has no accounts, no telemetry, no advertising, no trackers, and collects no data at all. Your documents are read and written only through the system file picker and live wherever you keep them.
+
+The app declares one permission: internet access. It is there for a single purpose — loading an image your own document points at by URL, so that the image can be shown and printed. Everything else, including the math and diagram engines, runs on your device. md contacts no servers of ours, because there are none.
 
 The full privacy policy is at https://nettrash.me/play/md/privacy.html.
 
-Free, ad-free, tracker-free.
+Ad-free and tracker-free.

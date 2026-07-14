@@ -1,5 +1,7 @@
-md 1.1 — diagrams and math in the preview.
+md 1.2 — write a whole book, not just a page.
 
-• Render LaTeX/TeX math ($…$ and $$…$$), Mermaid graphs (```mermaid) and PlantUML diagrams (```plantuml), just like GitHub.
-• Everything renders on-device from bundled engines — still no network, no accounts, and zero permissions (not even INTERNET).
-• The same rendering flows through to Print / Save as PDF.
+• Writer mode: open a folder as a book — chapters, articles, private notes that never print. Compile it to one PDF, or export it as EPUB.
+• Split now scrolls as one: move either pane, the other follows.
+• PDFs are real A4 pages, line-aware, with \newpage where you want it. White paper, dark ink.
+• Live word and character count. Math and diagrams. Images.
+• Legacy Cyrillic files open as text, not mojibake.

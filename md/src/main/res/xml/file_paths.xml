@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider scope: only the staged single-page PDF exports are
+     shareable (see Exporter.sharePdf). -->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>
