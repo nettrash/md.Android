@@ -1,6 +1,7 @@
-md 1.2 — PDFs done right, and writer tools.
+md 1.2 — write a whole book, not just a page.
 
-• Share or export the rendered document as a PDF: continuous content-tall pages, no lines cut — with \newpage giving you your own page breaks.
-• Table of contents: jump to any heading; autosave keeps the file current as you type.
-• Writer mode: open a folder as a book — chapters, articles, private <!-- note: --> comments that never print.
-• Still fully offline: no network, no accounts, zero permissions (not even INTERNET).
+• Writer mode: open a folder as a book — chapters, articles, private notes that never print. Compile it to one PDF, or export it as EPUB.
+• Split now scrolls as one: move either pane, the other follows.
+• PDFs are real A4 pages, line-aware, with \newpage where you want it. White paper, dark ink.
+• Live word and character count. Math and diagrams. Images.
+• Legacy Cyrillic files open as text, not mojibake.

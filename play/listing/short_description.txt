@@ -1,1 +1,1 @@
-Markdown editor, typewriter soul. Live preview, PDF export, zero permissions.
+Markdown editor, typewriter soul. Live preview, books, A4 PDF and EPUB export.

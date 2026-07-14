@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The `versionCode` is auto-incremented on every build by a Gradle finalizer
 (mirroring the iOS app's `agvtool bump`) and is not tracked here.
 
-## [1.2] — Unreleased
+## [1.2] — 2026-07-14
 
 ### Added
 
