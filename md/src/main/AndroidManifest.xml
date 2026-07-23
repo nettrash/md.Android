@@ -43,6 +43,36 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
+            <!-- Open PlantUML documents (.puml / .plantuml). PlantUML has no
+                 registered MIME type, so match on the filename extension
+                 instead — the bytes are UTF-8 text and open in the editor
+                 exactly like Markdown. `host="*"` is required for the path to
+                 be tested at all. Two filters: one for pickers that tag the
+                 intent with a MIME type, one for those that hand us the URI
+                 untyped (a filter with a mimeType only matches typed intents,
+                 and one without only matches untyped ones). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathSuffix=".puml" />
+                <data android:pathSuffix=".plantuml" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathSuffix=".puml" />
+                <data android:pathSuffix=".plantuml" />
+            </intent-filter>
+
             <!-- Receive shared text — open it as a new untitled document. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

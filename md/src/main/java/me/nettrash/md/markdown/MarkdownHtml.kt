@@ -44,30 +44,50 @@ object MarkdownHtml {
         // `let dark = dark && !export`.
         @Suppress("NAME_SHADOWING")
         val dark = dark && !export
-        val blocks = MarkdownParser.parse(source)
-        // Top-level headings carry a GitHub-style anchor id, so `[…](#slug)`
-        // links navigate and the table of contents can scroll the preview.
-        // The slugs come from the same `MarkdownParser.slug` the TOC uses,
-        // so the two always agree.
-        val slugs = HashMap<String, Int>()
-        val body = blocks.joinToString("\n") { block ->
-            if (block is MarkdownBlock.Heading) {
-                val id = MarkdownParser.slug(block.text, slugs)
-                "<h${block.level} id=\"$id\">${inline(block.text)}</h${block.level}>"
-            } else {
-                renderBlock(block)
-            }
-        }
+        // A raw PlantUML document — an opened `.puml`: bare diagram source with
+        // no ```plantuml fence (see [isRawPlantUML]). Render the whole file as
+        // one diagram rather than parsing it as Markdown, which would only show
+        // the `@startuml…` text. Everything else — a `.md` / `.txt` file — is
+        // parsed as Markdown exactly as before.
+        val body: String
+        val needsMath: Boolean
+        val needsMermaid: Boolean
+        val needsPlantuml: Boolean
 
-        val langs = blocks.filterIsInstance<MarkdownBlock.CodeBlock>()
-            .mapNotNull { it.language?.lowercase(Locale.ROOT) }.toSet()
-        val needsMermaid = "mermaid" in langs
-        val needsPlantuml = langs.any { it == "plantuml" || it == "puml" || it == "plant-uml" }
-        // Math is needed iff inline() actually emitted a math span — which it
-        // only does for real formulas, never for currency like "$5". Keying off
-        // the produced markup (not a raw "$" heuristic) means prose with stray
-        // dollar signs never even loads KaTeX.
-        val needsMath = body.contains("md-mathi") || body.contains("md-mathd")
+        if (isRawPlantUML(source)) {
+            // md-init.js turns the `.plantuml` container into an SVG offline; on
+            // failure it restores the source, so an invalid diagram still shows
+            // its text. No Markdown here, so no math / Mermaid.
+            body = "<div class=\"plantuml\">${escape(source)}</div>"
+            needsMath = false
+            needsMermaid = false
+            needsPlantuml = true
+        } else {
+            val blocks = MarkdownParser.parse(source)
+            // Top-level headings carry a GitHub-style anchor id, so `[…](#slug)`
+            // links navigate and the table of contents can scroll the preview.
+            // The slugs come from the same `MarkdownParser.slug` the TOC uses,
+            // so the two always agree.
+            val slugs = HashMap<String, Int>()
+            body = blocks.joinToString("\n") { block ->
+                if (block is MarkdownBlock.Heading) {
+                    val id = MarkdownParser.slug(block.text, slugs)
+                    "<h${block.level} id=\"$id\">${inline(block.text)}</h${block.level}>"
+                } else {
+                    renderBlock(block)
+                }
+            }
+
+            val langs = blocks.filterIsInstance<MarkdownBlock.CodeBlock>()
+                .mapNotNull { it.language?.lowercase(Locale.ROOT) }.toSet()
+            needsMermaid = "mermaid" in langs
+            needsPlantuml = langs.any { it == "plantuml" || it == "puml" || it == "plant-uml" }
+            // Math is needed iff inline() actually emitted a math span — which it
+            // only does for real formulas, never for currency like "$5". Keying
+            // off the produced markup (not a raw "$" heuristic) means prose with
+            // stray dollar signs never even loads KaTeX.
+            needsMath = body.contains("md-mathi") || body.contains("md-mathd")
+        }
 
         val head = StringBuilder()
         if (needsMath) {
@@ -97,6 +117,23 @@ object MarkdownHtml {
             </body>
             </html>
         """.trimIndent()
+    }
+
+    /** True when [source] is a raw PlantUML document rather than Markdown — its
+     *  first non-blank, non-comment line opens a PlantUML diagram (`@startuml`,
+     *  `@startmindmap`, `@startgantt`, `@startjson`, …). That is exactly what an
+     *  opened `.puml` file is: bare diagram source with no ```plantuml fence.
+     *  Such a document is rendered as a single diagram (see [document]) instead
+     *  of being parsed as Markdown, which would only show the source text.
+     *  PlantUML line comments (`'…`) and blank lines before the opener are
+     *  skipped, so a commented header doesn't hide it. */
+    fun isRawPlantUML(source: String): Boolean {
+        for (raw in source.split("\n")) {
+            val line = raw.trim()
+            if (line.isEmpty() || line.startsWith("'")) continue
+            return line.startsWith("@start")
+        }
+        return false
     }
 
     // MARK: - Blocks

@@ -126,4 +126,28 @@ class TestDataTest {
         val plantuml = MarkdownHtml.document(load("plantuml"), title = "plantuml", dark = false)
         assertTrue(plantuml.contains("<div class=\"plantuml\">"))
     }
+
+    @Test fun rawPlantUmlDocumentRendersAsDiagram() {
+        // An opened `.puml` is bare diagram source with no ```plantuml fence.
+        // It must render as one PlantUML diagram — a `.plantuml` container that
+        // md-init.js turns into an SVG — not as Markdown text, which would show
+        // the `@startuml…` source as paragraphs and never draw anything.
+        val puml = "@startuml\nAlice -> Bob: hi\nBob --> Alice: hi\n@enduml\n"
+        val html = MarkdownHtml.document(puml, title = "d", dark = false)
+        assertTrue(html.contains("<div class=\"plantuml\">"))
+        assertTrue(html.contains("rich/viz-global.js"))
+        assertFalse(html.contains("<p>@startuml"))
+
+        // Detection skips PlantUML line comments and blank lines before the
+        // opener, and recognizes any @start… diagram, not only @startuml.
+        assertTrue(MarkdownHtml.isRawPlantUML("' header comment\n\n@startmindmap\n* root\n@endmindmap"))
+        assertTrue(MarkdownHtml.isRawPlantUML("   \n@startuml\n@enduml"))
+
+        // A normal Markdown document is untouched: not a whole-document diagram,
+        // and `@startuml` mentioned mid-prose is not a false positive.
+        assertFalse(MarkdownHtml.isRawPlantUML("# Title\n\nSome prose about @startuml in passing."))
+        val md = MarkdownHtml.document("# Title\n\nHello.", title = "d", dark = false)
+        assertFalse(md.contains("<div class=\"plantuml\">"))
+        assertTrue(md.contains("<h1"))
+    }
 }
