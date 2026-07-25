@@ -1,12 +1,12 @@
-md is a Markdown editor with the soul of a typewriter — warm paper, a serif face, and nothing between you and the text. Write on one side and watch the rendered page on the other, or go full-screen in either direction. Then print it, export it as a PDF, or turn a folder of chapters into a whole book.
+md is a Markdown editor with the soul of a typewriter — warm paper, a serif face, and nothing between you and the text. Write on one side and watch the rendered page on the other. Then print it, export it, or turn a folder of chapters into a whole book.
 
 THREE LAYOUTS
 
 • Edit — a full-screen, distraction-free editor.
-• Split — editor and preview side by side, re-rendering live as you type, and scrolling as one: move either pane and the other follows. Offered on wide screens (tablets, unfolded foldables, landscape); it stacks when the window gets narrow.
+• Split — editor and preview side by side, re-rendering as you type and scrolling as one: move either pane and the other follows. Offered on wide screens; it stacks when the window is narrow.
 • Preview — just the rendered page.
 
-The segmented control in the app bar remembers your choice. A phone-width screen offers Edit and Preview; your remembered Split returns as soon as the window is wide again. A live word and character count sits under every page.
+The app bar remembers your choice, and a live word and character count sits under every page.
 
 THE MARKDOWN YOU ACTUALLY WRITE
 
@@ -14,40 +14,45 @@ THE MARKDOWN YOU ACTUALLY WRITE
 • Bullet, numbered and task lists, with nesting
 • Fenced code blocks, block quotes, tables with column alignment, thematic breaks
 • Images, including ones your document points at by URL
-• LaTeX math, Mermaid graphs and PlantUML diagrams, drawn on your device by engines built into the app
+• LaTeX math and mhchem chemistry, Mermaid graphs, Graphviz and PlantUML diagrams — all drawn on your device by engines built into the app
+• Syntax-highlighted code, in a quiet palette that matches the page rather than a bright editor theme
+• Footnotes, and YAML or TOML front matter recognised as metadata and kept out of the page
+• CSV and TSV blocks drawn as tables, the first row the header, number columns lined up on the right
 • A table of contents that jumps the preview to any heading
-• Private author notes — an HTML comment on its own line whose text begins with “note:” — listed in a Notes panel, and never rendered into the page, the PDF or the printout
+• Private author notes — an HTML comment on its own line beginning with “note:” — listed in a Notes panel, never rendered into the page, PDF or printout
 
 WRITER MODE: BOOKS
 
 • A book is simply a folder you pick: its subfolders are chapters, its Markdown files are articles, ordered by name.
-• Open any article to write it, and create new chapters and articles in place. Rename, reorder and delete them from the row menu — the order is written back to the file names, so it stays true in your file manager.
-• Compile the whole book into one PDF, or export it as a standard EPUB 3 with a proper table of contents — math and diagrams travel with it as images.
+• Open any article to write it, and create, rename, reorder and delete chapters and articles in place — the order is written back to the file names, so it stays true in your file manager.
+• Compile the whole book into one PDF at the size you choose, or a standard EPUB 3 with a table of contents — math and diagrams travel as images.
 
-PRINT AND PDF
+PRINT AND EXPORT
 
-• Share or export the rendered document as real A4 pages: pagination is line-aware, so no line of text is sliced at a page boundary, and \newpage on its own line starts a fresh page wherever you decide.
-• Pages come out white with dark ink, whatever theme you write in. Or print through the system print dialog.
-• Share the raw Markdown source through the share sheet instead, whenever that is what you need.
+• Share or export the rendered document as real pages — A4, A5, US Letter, US Legal, or a paperback trim (6×9, 5×8, 5.5×8.5) for print. Pagination is line-aware, so no line is sliced at a page boundary, and \newpage starts a fresh page where you decide. White paper, dark ink — or print through the system dialog.
+• Export as HTML: one self-contained file that opens anywhere — diagrams as drawings, formulas as real text.
+• Export as LaTeX: a .tex file where your mathematics stays mathematics.
+• Export a diagram as a standalone .svg vector, or a single document as a standard EPUB 3.
+• Share the raw Markdown source, or open and export TextBundle / TextPack, the Markdown-with-images container.
 
 YOUR FILES, ANYWHERE
 
 md is document-based, built on Android's Storage Access Framework:
 
-• Open, create and save .md / .markdown / .txt files in any location the system file picker can reach — device storage, SD card, or any cloud provider that plugs into it.
+• Open, create and save .md / .markdown / .txt files in any location the system file picker can reach — device storage, SD card, or any cloud provider that plugs into it. md also opens .puml, .gv and .textpack files.
 • "Open with md" from your file manager, or share text into md from any app.
 • Your work is saved as you write, and again when you leave the app.
-• Built-in examples, including a small sample book, show everything the app can do.
+• Built-in examples, including a sample book, show all the app can do.
 
 TYPEWRITER FEEL
 
-Warm paper backgrounds — "fresh paper" in light mode, "carbon paper" in dark — with a serif prose face, a monospace code face, and a warm-amber accent.
+Warm paper — "fresh paper" in light, "carbon paper" in dark — a serif prose face, a monospace code face, and a warm-amber accent.
 
 PRIVATE BY DESIGN
 
-md has no accounts, no telemetry, no advertising, no trackers, and collects no data at all. Your documents are read and written only through the system file picker and live wherever you keep them.
+md has no accounts, no telemetry, no advertising, no trackers, and collects no data at all. Your documents are read and written only through the system file picker.
 
-The app declares one permission: internet access. It is there for a single purpose — loading an image your own document points at by URL, so that the image can be shown and printed. Everything else, including the math and diagram engines, runs on your device. md contacts no servers of ours, because there are none.
+The app declares one permission: internet access, for a single purpose — loading an image your own document points at by URL, so it can be shown and printed. Everything else, including the rendering engines, runs on your device. md contacts no servers of ours; there are none.
 
 The full privacy policy is at https://nettrash.me/play/md/privacy.html.
 
