@@ -40,11 +40,14 @@ import me.nettrash.md.book.EpubImage
 import me.nettrash.md.book.EpubUnit
 import me.nettrash.md.book.buildEpub
 import me.nettrash.md.book.documentBody
+import me.nettrash.md.book.documentNavXhtml
+import me.nettrash.md.book.documentTitle
 import me.nettrash.md.book.escapeXml
 import me.nettrash.md.book.findRichElements
 import me.nettrash.md.book.replaceRichElements
 import me.nettrash.md.book.toXhtml
 import me.nettrash.md.markdown.MarkdownHtml
+import me.nettrash.md.markdown.MarkdownParser
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.ByteArrayOutputStream
@@ -98,6 +101,44 @@ object EpubExporter {
         scope.launch {
             done(runCatching { build(context, content) }.getOrNull())
         }
+    }
+
+    /** Build a single-document EPUB and hand the bytes to [done] on the main
+     *  thread — null when anything failed (an image capture, the zip), so the
+     *  caller can toast instead of writing a broken book. The document share
+     *  menu's "Export as EPUB…", the lone-document counterpart of [export]. */
+    fun exportDocument(context: Context, source: String, fileName: String, done: (ByteArray?) -> Unit) {
+        scope.launch {
+            done(runCatching { buildDocument(context, source, fileName) }.getOrNull())
+        }
+    }
+
+    /** Assemble the open document as a one-unit EPUB, reusing the whole book
+     *  pipeline: the same per-article rendering ([resolve] — rich blocks
+     *  captured to PNGs in an offscreen WebView, plain documents never touching
+     *  one), the same stored-zip container and package document ([buildEpub]),
+     *  and the same title-derived, stable identifier. What a lone document is
+     *  NOT is a book, so it diverges in exactly two places: there is no
+     *  title-page unit — the content unit stands alone — and the nav is the
+     *  document's own flat heading outline ([documentNavXhtml]) rather than a
+     *  chapter/article tree. The single unit is `content.xhtml` (id "content");
+     *  because it is the whole of `EpubBook.units`, the OPF names and spines
+     *  only it, so there is no title-page cursor to keep in step — the trap the
+     *  book path's title page would otherwise spring. */
+    private suspend fun buildDocument(context: Context, source: String, fileName: String): ByteArray? {
+        val title = documentTitle(MarkdownParser.frontMatter(source), fileName)
+        // Parse + render + fix is pure CPU, like prepare(); the outline is the
+        // same line scan the Contents menu uses, and its slugs are the ids
+        // MarkdownHtml just put on the headings — hence the nav anchors resolve.
+        val prepared = withContext(Dispatchers.Default) {
+            val body = toXhtml(documentBody(MarkdownHtml.document(source, title, dark = false)))
+            Prepared("content.xhtml", title, body, source, findRichElements(body).map { it.kind })
+        }
+        val images = ArrayList<EpubImage>()
+        val unit = resolve(context, prepared, images) ?: return null
+        val outline = withContext(Dispatchers.Default) { MarkdownParser.outline(source) }
+        val book = EpubBook(title, titlePage = unit, rootArticles = emptyList(), chapters = emptyList(), images = images)
+        return withContext(Dispatchers.IO) { buildEpub(book, nav = documentNavXhtml(title, outline)) }
     }
 
     private suspend fun build(context: Context, content: BookContent): ByteArray? {
@@ -220,7 +261,7 @@ object EpubExporter {
             view.evaluateJavascript(
                 "JSON.stringify({h: document.documentElement.scrollHeight," +
                     " els: Array.from(document.querySelectorAll(" +
-                    "'.md-mathi, .md-mathd, .mermaid, .plantuml'))" +
+                    "'.md-mathi, .md-mathd, .mermaid, .plantuml, .graphviz'))" +
                     ".map(e => { const r = e.getBoundingClientRect();" +
                     " return [r.left + window.scrollX, r.top + window.scrollY, r.width, r.height]; })})",
             ) { value ->

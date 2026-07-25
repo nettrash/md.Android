@@ -43,6 +43,99 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
+            <!-- Open PlantUML documents (.puml / .plantuml). PlantUML has no
+                 registered MIME type, so match on the filename extension
+                 instead — the bytes are UTF-8 text and open in the editor
+                 exactly like Markdown. `host="*"` is required for the path to
+                 be tested at all. Two filters: one for pickers that tag the
+                 intent with a MIME type, one for those that hand us the URI
+                 untyped (a filter with a mimeType only matches typed intents,
+                 and one without only matches untyped ones). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathSuffix=".puml" />
+                <data android:pathSuffix=".plantuml" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathSuffix=".puml" />
+                <data android:pathSuffix=".plantuml" />
+            </intent-filter>
+
+            <!-- Open Graphviz documents (.gv). Same shape as the PlantUML
+                 filters above and for the same reasons: DOT has no registered
+                 MIME type, so match the extension, and two filters are needed —
+                 one for pickers that tag the intent with a MIME type, one for
+                 those that hand us the URI untyped. Only `.gv` is claimed:
+                 `.dot` is already taken system-wide by Word templates on the
+                 Apple siblings, so claiming it there would leave the extension
+                 ambiguous; claiming it only on Android would break parity. A
+                 `.dot` file just needs renaming — ```dot fenced blocks inside a
+                 Markdown document, the common case, are unaffected. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathSuffix=".gv" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathSuffix=".gv" />
+            </intent-filter>
+
+            <!-- Open TextPack documents (.textpack — a zipped TextBundle). Same
+                 extension-matching shape as the PlantUML / Graphviz filters
+                 above and for the same reason: a TextPack has no registered MIME
+                 type (it is a zip, but tagged application/octet-stream by most
+                 pickers), so match the filename, with the usual pair — one for
+                 pickers that tag the intent with a MIME type, one for those that
+                 hand us the URI untyped. The pack is IMPORTED (its text.md
+                 becomes an editable, unsaved buffer — see DocumentViewModel.load
+                 / importTextPack), never opened for writing, since it can carry
+                 an assets/ folder this text-only document has no place for. A
+                 bare .textbundle DIRECTORY is not claimed: a directory package
+                 over the Storage Access Framework is a content:// tree, which
+                 ACTION_VIEW does not hand out — that gap is reported, not hidden. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathSuffix=".textpack" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathSuffix=".textpack" />
+            </intent-filter>
+
             <!-- Receive shared text — open it as a new untitled document. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

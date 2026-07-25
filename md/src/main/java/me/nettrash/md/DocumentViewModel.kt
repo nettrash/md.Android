@@ -118,17 +118,57 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Load a document from a SAF URI. `writable` reflects whether we hold
      *  a read-write grant (our own Open / Create flows) or read-only
-     *  (a file handed in via ACTION_VIEW). */
+     *  (a file handed in via ACTION_VIEW).
+     *
+     *  A `.textpack` (a zipped TextBundle) is imported for editing rather than
+     *  decoded as text: its `text.md` becomes the buffer, but the pack is NOT
+     *  adopted as a writable backing file (see [importTextPack]). Detection is
+     *  by name or the zip magic, so a `.md`/`.txt` — which never carries the
+     *  magic — takes the unchanged plain-text path. A file that looks like a
+     *  pack but can't be read as one is left showing the current document
+     *  rather than being decoded (its Latin-1 last resort would render the zip
+     *  as mojibake and the autosave would then bake that in). */
     fun load(target: Uri, writable: Boolean) {
         autosave?.cancel()   // a stale save must not chase the old document
-        val decoded = runCatching {
+        val bytes = runCatching {
             resolver.openInputStream(target)?.use { it.readBytes() }
         }.getOrNull() ?: return
-        text = decodeText(decoded)
+        val name = queryName(target) ?: target.lastPathSegment ?: "Untitled"
+        if (TextBundle.looksLikePack(name, bytes)) {
+            val imported = TextBundle.textFromPack(bytes) ?: return
+            importTextPack(imported, name)
+            return
+        }
+        text = decodeText(bytes)
         uri = target
-        displayName = queryName(target) ?: target.lastPathSegment ?: "Untitled"
+        displayName = name
         canWrite = writable
         isDirty = false
+    }
+
+    /** Adopt a `.textpack`'s `text.md` as the editable buffer — read-only.
+     *
+     *  A pack can carry an `assets/` folder this single-`String` document has no
+     *  place for, so it is deliberately NOT adopted as a writable backing file:
+     *  saving straight back would drop those assets (the house rule forbids
+     *  anything the author kept vanishing). The text opens for editing; because
+     *  there is no writable URI, Save falls through to Save As (a fresh `.md`) —
+     *  exactly the read-only import the iOS sibling gets from a readable-but-not-
+     *  writable UTI. The imported text is unsaved content, so it starts dirty,
+     *  the same as shared-in text. */
+    private fun importTextPack(imported: String, name: String) {
+        text = imported
+        uri = null
+        displayName = packBaseName(name)
+        canWrite = false
+        isDirty = imported.isNotEmpty()
+    }
+
+    /** A pack's file name without its `.textpack` extension, for the title bar
+     *  and the Save As suggestion; blank names fall back to "Untitled". */
+    private fun packBaseName(name: String): String {
+        val base = if (name.endsWith(".textpack", ignoreCase = true)) name.dropLast(9) else name
+        return base.ifBlank { "Untitled" }
     }
 
     /** [load], but with the provider I/O (the read and the DISPLAY_NAME

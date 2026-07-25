@@ -1,7 +1,7 @@
-md 1.2 — write a whole book, not just a page.
+md 1.3 — richer pages, and more ways out.
 
-• Writer mode: open a folder as a book — chapters, articles, private notes that never print. Compile it to one PDF, or export it as EPUB.
-• Split now scrolls as one: move either pane, the other follows.
-• PDFs are real A4 pages, line-aware, with \newpage where you want it. White paper, dark ink.
-• Live word and character count. Math and diagrams. Images.
-• Legacy Cyrillic files open as text, not mojibake.
+• Chemistry with mhchem (\ce, \pu), and syntax-highlighted code in the app's own quiet palette.
+• Graphviz diagrams, plus the full range Mermaid and PlantUML draw.
+• Footnotes, YAML/TOML front matter, and CSV/TSV tables.
+• New exports: HTML, LaTeX, single-document EPUB, and a diagram as SVG.
+• Pick a PDF page size: A4, A5, Letter, Legal, or a paperback trim.

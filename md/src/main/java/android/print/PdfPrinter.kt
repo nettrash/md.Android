@@ -8,7 +8,7 @@
  * hand — the long-standing print-to-PDF-without-a-print-dialog pattern,
  * which is what gives the A4 export its line-aware pagination — is from
  * a class inside this package. ART doesn't seal framework packages, so
- * the subclassing is fine at runtime. Only Exporter.renderA4Pdf calls it.
+ * the subclassing is fine at runtime. Only Exporter.renderTrimPdf calls it.
  */
 
 package android.print
