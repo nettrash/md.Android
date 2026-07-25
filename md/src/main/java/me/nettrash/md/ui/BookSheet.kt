@@ -15,8 +15,10 @@
  * Export as PDF… — the whole book compiled into one document (title page,
  * chapters, articles, each on a fresh page; BookState.compileForExport)
  * and rendered through the same layout-aware PDF pipeline as a document —
- * and Export as EPUB…, a real EPUB 3 with the same reading order and
- * rich content rendered to images (book/Epub.kt + EpubExporter).
+ * Export as EPUB…, a real EPUB 3 with the same reading order and
+ * rich content rendered to images (book/Epub.kt + EpubExporter), and
+ * Export as LaTeX…, one `book`-class .tex over the same reading order
+ * (markdown/LaTeXExport.kt).
  * The listing is re-read from the SAF tree every time the sheet opens and
  * after every change.
  */
@@ -39,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -111,6 +114,7 @@ private class RowActions(
 @Composable
 fun BookSheet(
     book: BookState,
+    pageSizeState: PageSizeState,
     onOpenArticle: (BookArticle) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -237,7 +241,7 @@ fun BookSheet(
                 Toast.makeText(context, "Couldn't read the whole book.", Toast.LENGTH_LONG).show()
                 return@launch
             }
-            Exporter.sharePdf(context, compiled, editableBookName(current.rootName), dark)
+            Exporter.sharePdf(context, compiled, editableBookName(current.rootName), dark, pageSizeState.selected)
         }
     }
 
@@ -256,7 +260,7 @@ fun BookSheet(
                 Toast.makeText(context, "Couldn't read the whole book.", Toast.LENGTH_LONG).show()
                 return@launch
             }
-            Exporter.renderPdf(context, compiled, editableBookName(current.rootName), dark) { bytes ->
+            Exporter.renderPdf(context, compiled, editableBookName(current.rootName), dark, pageSizeState.selected) { bytes ->
                 val written = bytes != null && runCatching {
                     // "wt" truncates; some providers only support plain "w"
                     // — fall back rather than fail (see the editor's export
@@ -301,6 +305,25 @@ fun BookSheet(
         }
     }
 
+    // Export the book as one `book`-class .tex file: the same structured
+    // read as the EPUB (the chapters and articles have to stay apart to
+    // become `\chapter` / `\section`), then pure string work — no engine,
+    // so nothing to wait for once the book has been read.
+    val exportBookTexLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/x-tex")
+    ) { uri ->
+        val current = tree
+        if (uri == null || current == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val content = withContext(Dispatchers.IO) { book.readBook(current) }
+            if (content == null) {
+                Toast.makeText(context, "Couldn't read the whole book.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            Exporter.exportBookLaTeX(context, uri, content)
+        }
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         val current = tree
         when {
@@ -319,12 +342,16 @@ fun BookSheet(
                 item {
                     BookHeader(
                         current.rootName,
+                        pageSizeState = pageSizeState,
                         onSharePdf = { shareBookPdf() },
                         onExportPdf = {
                             exportBookLauncher.launch(editableBookName(current.rootName) + ".pdf")
                         },
                         onExportEpub = {
                             exportEpubLauncher.launch(editableBookName(current.rootName) + ".epub")
+                        },
+                        onExportTex = {
+                            exportBookTexLauncher.launch(editableBookName(current.rootName) + ".tex")
                         },
                     )
                 }
@@ -456,15 +483,25 @@ private fun ChapterSection(
 
 /** The book's name row, with the whole-book actions behind a trailing
  *  overflow: Share as PDF / Export as PDF… over the compiled book, and
- *  Export as EPUB… over the structured one. */
+ *  Export as EPUB… / Export as LaTeX… over the structured one. A PDF Page
+ *  Size submenu sits between the two PDF actions and Export as EPUB… — the
+ *  book compile is the surface trim sizes matter most for (no POD service
+ *  accepts A4 interiors), reading the same app-wide [pageSizeState] the
+ *  document menu writes. */
 @Composable
 private fun BookHeader(
     name: String,
+    pageSizeState: PageSizeState,
     onSharePdf: () -> Unit,
     onExportPdf: () -> Unit,
     onExportEpub: () -> Unit,
+    onExportTex: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
+    // The size picker is a second menu anchored to the same button — Compose
+    // doesn't nest DropdownMenus, so "PDF Page Size" closes this one and opens
+    // that (the pattern the document menu uses for its own picker).
+    var sizeOpen by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
@@ -493,9 +530,31 @@ private fun BookHeader(
                 DropdownMenuItem(text = { Text("Export as PDF…") }, onClick = {
                     open = false; onExportPdf()
                 })
+                DropdownMenuItem(text = { Text("PDF Page Size") }, onClick = {
+                    open = false; sizeOpen = true
+                })
                 DropdownMenuItem(text = { Text("Export as EPUB…") }, onClick = {
                     open = false; onExportEpub()
                 })
+                DropdownMenuItem(text = { Text("Export as LaTeX…") }, onClick = {
+                    open = false; onExportTex()
+                })
+            }
+            DropdownMenu(expanded = sizeOpen, onDismissRequest = { sizeOpen = false }) {
+                PageSize.ALL.forEach { size ->
+                    DropdownMenuItem(
+                        text = { Text(size.label) },
+                        trailingIcon = {
+                            if (size.id == pageSizeState.selected.id) {
+                                Icon(Icons.Filled.Check, contentDescription = "Selected")
+                            }
+                        },
+                        onClick = {
+                            sizeOpen = false
+                            pageSizeState.choose(size)
+                        },
+                    )
+                }
             }
         }
     }

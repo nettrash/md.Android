@@ -102,6 +102,13 @@ private fun BlockView(block: MarkdownBlock) {
 
         // Private author notes are never rendered.
         is MarkdownBlock.Note -> Unit
+
+        // Metadata about the document, not part of it.
+        is MarkdownBlock.FrontMatter -> Unit
+
+        // Footnotes are gathered at the foot of the rendered document,
+        // not drawn where they were written.
+        is MarkdownBlock.FootnoteDefinition -> Unit
     }
 }
 
