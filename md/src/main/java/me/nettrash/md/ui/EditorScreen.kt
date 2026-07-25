@@ -55,6 +55,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Splitscreen
@@ -104,6 +105,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.nettrash.md.DocumentViewModel
 import me.nettrash.md.book.BookState
+import me.nettrash.md.markdown.DiagramSvg
 import me.nettrash.md.markdown.MarkdownParser
 import me.nettrash.md.markdown.WritingStats
 
@@ -130,6 +132,22 @@ fun EditorScreen(viewModel: DocumentViewModel) {
     var contentsOpen by remember { mutableStateOf(false) }
     var notesOpen by remember { mutableStateOf(false) }
     var examplesOpen by remember { mutableStateOf(false) }
+    // The diagrams the document offers for standalone-SVG export (Mermaid /
+    // PlantUML / Graphviz — math is HTML+CSS, never SVG, so it is never
+    // offered). Recomputed only when the text changes, like the outline; feeds
+    // the Export Diagram as SVG… submenu, which is disabled when there are none.
+    val svgDiagrams = remember(viewModel.text) { DiagramSvg.diagrams(viewModel.text) }
+    var svgMenuOpen by remember { mutableStateOf(false) }
+    // The diagram a just-launched SVG create-document picker is for, carried
+    // across the picker round-trip so its callback knows which ordinal to
+    // capture out of the offscreen DOM.
+    var pendingSvgDiagram by remember { mutableStateOf<DiagramSvg.Diagram?>(null) }
+    // The PDF/print trim size, remembered app-wide (see PageSizeState). One
+    // instance, shared with the book navigator below, so the document menu and
+    // the book compile agree on a single choice. `pdfSizeOpen` shows its own
+    // submenu, anchored to the More button like the Examples list.
+    val pageSizeState = remember { PageSizeState(context.applicationContext) }
+    var pdfSizeOpen by remember { mutableStateOf(false) }
     // The bundled example documents (assets/examples/*.md); the "Example
     // Book" folder ships alongside them but belongs to Example Book… below.
     // Listed once — the APK's asset table can't change while we're running.
@@ -185,7 +203,7 @@ fun EditorScreen(viewModel: DocumentViewModel) {
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri ->
         uri?.let { target ->
-            Exporter.renderPdf(context, viewModel.text, viewModel.displayName, dark) { bytes ->
+            Exporter.renderPdf(context, viewModel.text, viewModel.displayName, dark, pageSizeState.selected) { bytes ->
                 val written = bytes != null && runCatching {
                     // "wt" truncates — plain "w" keeps stale bytes when
                     // overwriting a longer, already-existing file — but some
@@ -201,6 +219,91 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                     Toast.makeText(context, "Couldn't export the PDF.", Toast.LENGTH_LONG).show()
                 }
             }
+        }
+    }
+    // Export as HTML: same shape as Export as PDF — destination first, then
+    // the document renders offscreen and ONE self-contained .html file (no
+    // engines, no folder of assets, no network) is written to that URI.
+    val exportHtmlLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/html")
+    ) { uri ->
+        uri?.let { target ->
+            Exporter.renderHtml(context, viewModel.text, viewModel.displayName, dark) { bytes ->
+                val written = bytes != null && runCatching {
+                    val stream = runCatching { context.contentResolver.openOutputStream(target, "wt") }
+                        .getOrNull() ?: context.contentResolver.openOutputStream(target)
+                    stream!!.use { it.write(bytes) }
+                }.isSuccess
+                if (!written) {
+                    Toast.makeText(context, "Couldn't export the HTML.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    // Export as LaTeX: the same destination-first shape, but nothing to
+    // render — a .tex file is pure string work, so it is written the moment
+    // the picker comes back (Exporter.exportLaTeX toasts its own failures).
+    val exportTexLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/x-tex")
+    ) { uri ->
+        uri?.let { Exporter.exportLaTeX(context, it, viewModel.text) }
+    }
+    // Export as EPUB: same destination-first shape as Export as PDF / HTML —
+    // the picker first, then the document renders offscreen (rich blocks to
+    // images) and a one-unit EPUB 3 is written to the picked URI. The single
+    // document is not a book, so it carries no title page and its nav is the
+    // document's own heading outline (see EpubExporter.exportDocument).
+    val exportEpubLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/epub+zip")
+    ) { uri ->
+        uri?.let { target ->
+            EpubExporter.exportDocument(context, viewModel.text, viewModel.displayName) { bytes ->
+                val written = bytes != null && runCatching {
+                    val stream = runCatching { context.contentResolver.openOutputStream(target, "wt") }
+                        .getOrNull() ?: context.contentResolver.openOutputStream(target)
+                    stream!!.use { it.write(bytes) }
+                }.isSuccess
+                if (!written) {
+                    Toast.makeText(context, "Couldn't export the EPUB.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // Export Diagram as SVG: the user picks one diagram from the submenu, the
+    // destination picker opens, then the document renders offscreen and that
+    // diagram's rendered <svg> is read out of the DOM and written as a
+    // standalone vector file. `pendingSvgDiagram` carries the chosen diagram
+    // across the picker round-trip (see the submenu below).
+    val exportSvgLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("image/svg+xml")
+    ) { uri ->
+        val diagram = pendingSvgDiagram
+        pendingSvgDiagram = null
+        if (uri != null && diagram != null) {
+            Exporter.renderDiagramSvg(context, viewModel.text, viewModel.displayName, diagram.ordinal) { bytes ->
+                val written = bytes != null && runCatching {
+                    val stream = runCatching { context.contentResolver.openOutputStream(uri, "wt") }
+                        .getOrNull() ?: context.contentResolver.openOutputStream(uri)
+                    stream!!.use { it.write(bytes) }
+                }.isSuccess
+                if (!written) {
+                    // Don't leave the freshly created, empty .svg silently in
+                    // place — a diagram that failed to render has no vector.
+                    Toast.makeText(context, "Couldn't export the SVG.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    // Export as TextPack: destination first, then the current document — with
+    // any findable local images copied into assets/ and their refs rewritten —
+    // is written as a .textpack (a zipped TextBundle). `viewModel.uri` is passed
+    // so a file-backed document's local images can be found beside it.
+    val exportTextPackLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        uri?.let { target ->
+            Exporter.exportTextPack(context, target, viewModel.text, viewModel.uri, viewModel.displayName)
         }
     }
 
@@ -348,7 +451,16 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                             })
                             DropdownMenuItem(text = { Text("Open…") }, onClick = {
                                 menuOpen = false
-                                openLauncher.launch(arrayOf("text/markdown", "text/plain", "application/octet-stream"))
+                                // application/zip surfaces a .textpack in pickers
+                                // that type it as a zip; octet-stream covers the
+                                // rest (see DocumentViewModel.load, which imports
+                                // a pack and reads a plain file otherwise).
+                                openLauncher.launch(
+                                    arrayOf(
+                                        "text/markdown", "text/plain",
+                                        "application/octet-stream", "application/zip",
+                                    ),
+                                )
                             })
                             // The bundled examples, in their own dropdown
                             // (anchored to this same button — see below).
@@ -369,11 +481,41 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                             })
                             DropdownMenuItem(text = { Text("Share Rendered PDF…") }, onClick = {
                                 menuOpen = false
-                                Exporter.sharePdf(context, viewModel.text, viewModel.displayName, dark)
+                                Exporter.sharePdf(context, viewModel.text, viewModel.displayName, dark, pageSizeState.selected)
                             })
                             DropdownMenuItem(text = { Text("Export as PDF…") }, onClick = {
                                 menuOpen = false
                                 exportPdfLauncher.launch(suggestedPdfName(viewModel.displayName))
+                            })
+                            // The trim size both PDF actions above use; its own
+                            // submenu, anchored to this same button (see below).
+                            DropdownMenuItem(text = { Text("PDF Page Size") }, onClick = {
+                                menuOpen = false; pdfSizeOpen = true
+                            })
+                            DropdownMenuItem(text = { Text("Export as HTML…") }, onClick = {
+                                menuOpen = false
+                                exportHtmlLauncher.launch(suggestedHtmlName(viewModel.displayName))
+                            })
+                            DropdownMenuItem(text = { Text("Export as EPUB…") }, onClick = {
+                                menuOpen = false
+                                exportEpubLauncher.launch(suggestedEpubName(viewModel.displayName))
+                            })
+                            DropdownMenuItem(text = { Text("Export as LaTeX…") }, onClick = {
+                                menuOpen = false
+                                exportTexLauncher.launch(suggestedTexName(viewModel.displayName))
+                            })
+                            // One vector diagram → a standalone .svg. Its own
+                            // submenu (anchored to this same button), greyed out
+                            // until the document has a Mermaid / PlantUML /
+                            // Graphviz diagram — math is HTML+CSS, not SVG.
+                            DropdownMenuItem(
+                                text = { Text("Export Diagram as SVG…") },
+                                enabled = svgDiagrams.isNotEmpty(),
+                                onClick = { menuOpen = false; svgMenuOpen = true },
+                            )
+                            DropdownMenuItem(text = { Text("Export as TextPack…") }, onClick = {
+                                menuOpen = false
+                                exportTextPackLauncher.launch(suggestedTextPackName(viewModel.displayName))
                             })
                             HorizontalDivider()
                             // The private author notes (`<!-- note: … -->`),
@@ -431,6 +573,51 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                 examplesOpen = false
                                 exampleBookLauncher.launch(null)
                             })
+                        }
+                        // The diagrams offered for SVG export, anchored to the
+                        // same More button. Each row is one diagram, labelled by
+                        // engine and a snippet of its source (DiagramSvg
+                        // .menuTitle). Picking one launches a create-document
+                        // picker named from the document and the diagram's
+                        // position; the capture happens in exportSvgLauncher.
+                        DropdownMenu(expanded = svgMenuOpen, onDismissRequest = { svgMenuOpen = false }) {
+                            svgDiagrams.forEach { diagram ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            diagram.menuTitle,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    },
+                                    onClick = {
+                                        svgMenuOpen = false
+                                        pendingSvgDiagram = diagram
+                                        exportSvgLauncher.launch(
+                                            suggestedSvgName(viewModel.displayName, diagram.ordinal),
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                        // The PDF page-size picker, anchored to the same More
+                        // button. The current choice carries a check; picking
+                        // one remembers it app-wide (see PageSizeState).
+                        DropdownMenu(expanded = pdfSizeOpen, onDismissRequest = { pdfSizeOpen = false }) {
+                            PageSize.ALL.forEach { size ->
+                                DropdownMenuItem(
+                                    text = { Text(size.label) },
+                                    trailingIcon = {
+                                        if (size.id == pageSizeState.selected.id) {
+                                            Icon(Icons.Filled.Check, contentDescription = "Selected")
+                                        }
+                                    },
+                                    onClick = {
+                                        pdfSizeOpen = false
+                                        pageSizeState.choose(size)
+                                    },
+                                )
+                            }
                         }
                     }
                 },
@@ -520,6 +707,7 @@ fun EditorScreen(viewModel: DocumentViewModel) {
     if (bookSheetOpen) {
         BookSheet(
             book = bookState,
+            pageSizeState = pageSizeState,
             onOpenArticle = { article ->
                 viewModel.loadAsync(article.file.uri, writable = true)
                 bookSheetOpen = false
@@ -696,6 +884,24 @@ private fun suggestedFileName(displayName: String): String {
 
 private fun suggestedPdfName(displayName: String): String =
     suggestedFileName(displayName).removeSuffix(".md") + ".pdf"
+
+private fun suggestedHtmlName(displayName: String): String =
+    suggestedFileName(displayName).removeSuffix(".md") + ".html"
+
+private fun suggestedEpubName(displayName: String): String =
+    suggestedFileName(displayName).removeSuffix(".md") + ".epub"
+
+private fun suggestedTexName(displayName: String): String =
+    suggestedFileName(displayName).removeSuffix(".md") + ".tex"
+
+/** `Doc.md` → `Doc-<n>.svg`, where n is the diagram's 1-based document-order
+ *  position (`ordinal + 1`) — so two diagrams from one document export to
+ *  distinct files. */
+private fun suggestedSvgName(displayName: String, ordinal: Int): String =
+    suggestedFileName(displayName).removeSuffix(".md") + "-" + (ordinal + 1) + ".svg"
+
+private fun suggestedTextPackName(displayName: String): String =
+    suggestedFileName(displayName).removeSuffix(".md") + ".textpack"
 
 /** The ordering prefix the bundled example files carry ("01-", "02-", …). */
 private val examplePrefix = Regex("""^\d+-""")

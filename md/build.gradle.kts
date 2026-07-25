@@ -33,7 +33,7 @@ val storedVersionCode: Int = run {
 }
 
 val resolvedVersionName: String =
-    (project.findProperty("versionName") as String?)?.takeIf { it.isNotBlank() } ?: "1.2"
+    (project.findProperty("versionName") as String?)?.takeIf { it.isNotBlank() } ?: "1.3"
 
 val skipVersionBump: Boolean = project.hasProperty("noBump")
 
