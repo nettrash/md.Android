@@ -254,7 +254,7 @@ class LaTeXExportTest {
             """
             ---
             title: On Escaping
-            author: Ivan Alekseev
+            author: nettrash
             date: 24 July 2026
             slug: on-escaping
             tags: latex, md
@@ -264,7 +264,7 @@ class LaTeXExportTest {
             """.trimIndent()
         )
         assertTrue(tex.contains("\\title{On Escaping}"))
-        assertTrue(tex.contains("\\author{Ivan Alekseev}"))
+        assertTrue(tex.contains("\\author{nettrash}"))
         assertTrue(tex.contains("\\date{24 July 2026}"))
         assertTrue(tex.contains("\\maketitle"))
         // Everything else is metadata *about* the document and has nowhere

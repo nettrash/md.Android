@@ -107,4 +107,4 @@ auto-increments on every `assemble` / `bundle`, mirroring the iOS app's
 
 ## License
 
-MIT — see [LICENSE](LICENSE). © 2026 nettrash (Ivan Alekseev).
+MIT — see [LICENSE](LICENSE). © 2026 nettrash.

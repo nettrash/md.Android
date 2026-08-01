@@ -225,7 +225,7 @@ class MarkdownParserTest {
         val md = """
             ---
             title: My Book
-            author: Ivan Alekseev
+            author: nettrash
             date: 2026-07-24
             ---
 
@@ -240,7 +240,7 @@ class MarkdownParserTest {
         assertEquals(
             listOf(
                 MetadataField("title", "My Book"),
-                MetadataField("author", "Ivan Alekseev"),
+                MetadataField("author", "nettrash"),
                 MetadataField("date", "2026-07-24"),
             ),
             first.fields,
@@ -777,12 +777,12 @@ class MarkdownParserTest {
 
     @Test fun delimitedParsingFollowsRFC4180() {
         val rows = MarkdownHtml.parseDelimited(
-            "Name,Note\n\"Alekseev, Ivan\",\"She said \"\"hi\"\"\"\nAnn,\n", ',',
+            "Name,Note\n\"Doe, Jane\",\"She said \"\"hi\"\"\"\nAnn,\n", ',',
         )
         assertEquals(
             listOf(
                 listOf("Name", "Note"),
-                listOf("Alekseev, Ivan", "She said \"hi\""),  // quoted separator, doubled quote
+                listOf("Doe, Jane", "She said \"hi\""),  // quoted separator, doubled quote
                 listOf("Ann", ""),                            // an empty trailing field
             ),
             rows,
