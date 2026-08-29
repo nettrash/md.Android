@@ -2,7 +2,7 @@
 # Build pipeline — pinned to the same combination the sibling apps ship
 # with, so AGP 9's built-in Kotlin source-set wiring works without the
 # legacy `kotlin.sourceSets` DSL escape hatch.
-agp = "9.3.1"
+agp = "9.3.2"
 kotlin = "2.3.20"
 
 # Core / lifecycle / activity
