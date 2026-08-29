@@ -48,6 +48,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.floor
+import kotlin.math.log10
 
 class PlotTest {
 
@@ -90,6 +92,100 @@ class PlotTest {
                 bits(Plot.niceStep(real(row["input"]))),
             )
         }
+    }
+
+    /**
+     * The decade is the mechanism, so the decade is what this pins.
+     *
+     * `9.999999999999999e-05` (bits 3f1a36e2eb1c432c) sits one ULP under 1e-4,
+     * so the decade below it — the one [Plot.niceStep] must scale by — is 1e-5.
+     * `floor(log10 …)` says −4 all the same, and the old code handed that
+     * straight to a power function. `pow` is not correctly rounded and **is not
+     * specified to be**, so `pow(10, n)` is a different double on different
+     * *runtime versions*. Measured against the literal `1e<n>` over all 632
+     * integer exponents in [-323, 308]: Node 20 disagrees at 68 of them on
+     * arm64 and 69 on x86-64, Node 22 at 68, Node 24 at 2, Node 26 at none, and
+     * OpenJDK 21 — this port's runtime — at 64, `StrictMath.pow` included. Not
+     * a CPU difference: Node 20 is wrong on both architectures and Node 26 is
+     * right on both. A wrong decade picks a different rung of the 1/2/5/10
+     * ladder — a different step, a different number of ticks, different labels,
+     * different bytes.
+     *
+     * This is a real failure, not a thought experiment: md.vscode's CI runs
+     * Node 20 and is red on the pushed v1.2.0 (fd71a4e) with three failures in
+     * `test/plot.test.ts`, `tiny_range` among them and an `xLabels` nine long
+     * where this Mac — Node 26 — produces eight. Same source, same input, two
+     * engine versions.
+     *
+     * The decade must therefore equal the **decimal literal**, whose parse is
+     * specified to be correctly rounded in every language this renderer is
+     * ported to. **`pow(10, e)` must never come back** — not in
+     * `Plot.decadeOf`, not in `powerOfTen`, not anywhere the geometry can see
+     * it.
+     *
+     * **What this pins, and what it does not.** It pins the *contract*: the
+     * decade of the witness is the double that `"1e-5"` parses to, bit for bit,
+     * and never 1e-4. It does not pin the *mechanism*. A `powerOfTen` rebuilt
+     * on `Math.pow` fails here only because −5 happens to be one of OpenJDK
+     * 21's 64 wrong exponents; on a runtime whose `pow` agreed with the literal
+     * there — Darwin libm's is correct for all 632 — this assertion would pass
+     * with `pow` in place and tell you nothing. The family's mechanism guard is
+     * md.vscode's `test/plot.test.ts`, "gets the boundary decade right without
+     * Math.pow, and survives a wrong log10": it replaces `Math.pow` with a
+     * function that **throws**, so any reintroduction fails on every platform,
+     * and it perturbs `log10` by ±1 decade while still demanding all 81 oracle
+     * rows. Its CI runs Node 20, an affected engine. If you touch the decade
+     * path here, run that one too.
+     */
+    @Test fun theDecadeOfABoundaryInputIsTheDecimalLiteralNotAPow() {
+        val rough = java.lang.Double.longBitsToDouble(0x3f1a36e2eb1c432cL)
+        assertEquals("the recorded witness", 9.999999999999999e-05, rough, 0.0)
+        assertTrue("one ULP under 1e-4", rough < 1e-4)
+
+        // What log10 on its own claims — an approximation, and here a wrong one.
+        assertEquals("floor(log10) alone", -4.0, floor(log10(rough)), 0.0)
+
+        // What the decade must be: the literal, bit for bit, however it is spelt.
+        assertEquals("decadeOf", bits("1e-5".toDouble()), bits(Plot.decadeOf(rough)))
+        assertEquals("the literal is the double", bits(1e-5), bits(Plot.decadeOf(rough)))
+
+        // And the answer the unpinned code gave, which is what must not return.
+        assertFalse("decade must not be 1e-4", Plot.decadeOf(rough) == 1e-4)
+    }
+
+    /**
+     * The same pin across the whole exponent range the renderer can reach, on
+     * both sides of every boundary: a power of ten is its own decade, and the
+     * double just below it belongs to the decade beneath. 601 exponents,
+     * [-300, 300], two inputs each.
+     *
+     * Expectations are spelt as parsed literals rather than computed, so the
+     * test cannot agree with the code by sharing its mistake. It is still a
+     * contract test rather than a mechanism test: it would catch a `Math.pow`
+     * decade on *this* runtime — OpenJDK 21 disagrees with the literal at 62 of
+     * these 601 exponents — but it would pass unchanged on a runtime whose
+     * `pow` is correctly rounded. See the note on the previous test for the
+     * guard that bites everywhere.
+     */
+    @Test fun everyDecadeBoundaryResolvesToTheLiteralOnBothSides() {
+        for (exponent in -300..300) {
+            val literal = "1e$exponent".toDouble()
+            assertEquals("decadeOf(1e$exponent)", bits(literal), bits(Plot.decadeOf(literal)))
+            assertEquals(
+                "decadeOf(nextDown(1e$exponent))",
+                bits("1e${exponent - 1}".toDouble()),
+                bits(Plot.decadeOf(Math.nextDown(literal))),
+            )
+        }
+    }
+
+    /** The pin must be inert for the inputs `niceStep` cannot scale at all. */
+    @Test fun theDecadePinLeavesDegenerateInputsAlone() {
+        assertEquals("zero", bits(0.0), bits(Plot.decadeOf(0.0)))
+        assertTrue("negative", Plot.decadeOf(-1.0).isNaN())
+        assertTrue("nan", Plot.decadeOf(Double.NaN).isNaN())
+        assertEquals("inf", bits(Double.POSITIVE_INFINITY), bits(Plot.decadeOf(Double.POSITIVE_INFINITY)))
+        assertTrue("-inf", Plot.decadeOf(Double.NEGATIVE_INFINITY).isNaN())
     }
 
     @Test fun niceStepTakesEachOfTheFourBranches() {

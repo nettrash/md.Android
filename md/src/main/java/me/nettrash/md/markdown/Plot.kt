@@ -72,12 +72,25 @@
  * The platform's power function is wrong for this renderer in two unrelated
  * ways, and both are handled here rather than inherited:
  *
- *   * **Accuracy, in the geometry.** OpenJDK's `Math.pow(10.0, -5.0)` lands one
- *     ULP below the true 1e-5, where Rust's and V8's are exact, so `niceStep`
- *     built three of the eighty-one recorded tick spacings one ULP light — and a
- *     step is what every gridline, tick and label of an axis is laid out from.
- *     `powerOfTen` builds the power of ten exactly instead; see the note there,
- *     and note that `StrictMath.pow` is no better.
+ *   * **Accuracy, in the geometry.** Neither `pow` nor `log10` is correctly
+ *     rounded, and neither is specified to be, so both differ by *runtime
+ *     version* — the engine or libm the toolchain happens to ship, not the CPU
+ *     it runs on. Measured, by comparing `pow(10, n)` against the decimal
+ *     literal `1e<n>` for all 632 integer exponents in [-323, 308]: OpenJDK 21,
+ *     this port's own runtime, disagrees at 64 of them and `StrictMath.pow` at
+ *     the same 64, so `Math.pow(10.0, -5.0)` lands one ULP below the true 1e-5
+ *     and `niceStep` built three of the eighty-one recorded tick spacings one
+ *     ULP light. V8 varies the same way along its own version axis — Node 20
+ *     disagrees at 68 exponents, Node 22 at 68, Node 24 at 2, Node 26 at none
+ *     — which is what turned md.vscode's CI red on the pushed v1.2.0 (fd71a4e)
+ *     with three failures in `test/plot.test.ts`: that CI runs Node 20. Darwin
+ *     libm's `pow` is correct for all 632, which is why no Mac ever saw it. A
+ *     step is what every gridline, tick and label of an axis is laid out from,
+ *     so a last-bit difference in the decade is a different figure, not a
+ *     rounding curiosity. `powerOfTen` therefore parses a decimal literal —
+ *     correctly rounded by specification everywhere — and `niceStep` pins the
+ *     exponent `log10` guessed by exact comparison rather than trusting its
+ *     `floor` at a decade boundary. See the notes on both.
  *   * **Semantics, in the expression language.** `Math.pow` answers NaN for
  *     `pow(1, NaN)`, `pow(1, ±∞)` and `pow(-1, ±∞)`, where C99 and IEEE 754 —
  *     and therefore Swift and Rust — all answer 1.0. `powIEEE` restores those
@@ -90,7 +103,6 @@
 package me.nettrash.md.markdown
 
 import java.math.BigDecimal
-import java.math.BigInteger
 import java.math.MathContext
 import java.math.RoundingMode
 import kotlin.math.abs
@@ -1543,16 +1555,43 @@ object Plot {
     // MARK: - Axes
 
     /**
-     * The site's tick spacing, ported exactly.
+     * The site's tick spacing, ported exactly — with the decade pinned.
      *
      * ```
      * rough = range / 8 ; mag = 10^floor(log10 rough) ; norm = rough / mag
      * step  = (norm<=1.5 ? 1 : norm<=3 ? 2 : norm<=7 ? 5 : 10) * mag
      * ```
+     *
+     * The one thing this port does **not** inherit from the platform is its
+     * opinion of which decade `rough` lives in. `log10` is no more correctly
+     * rounded than `pow` is, so at a decade boundary its `floor` can land on
+     * either side of the truth, and it lands differently on different runtime
+     * versions. `rough = 9.999999999999999e-05` (bits 3f1a36e2eb1c432c) is the
+     * witness: it sits one ULP under 1e-4, and a decade that is off by one
+     * picks a different rung of the 1/2/5/10 ladder, which changes the *step*,
+     * which changes how many ticks the axis has and what every one of them
+     * says.
+     *
+     * That is not hypothetical. md.vscode's CI is red on the pushed v1.2.0
+     * (fd71a4e) for exactly this: three failures in `test/plot.test.ts`,
+     * `tiny_range` among them, one of them an `xLabels` of length 9 where this
+     * Mac produces 8 — because that CI runs Node 20, whose `Math.pow(10, -4)`
+     * is one ULP below the literal 1e-4, and this Mac runs Node 26, whose is
+     * not. The axis is the V8 version, not the CPU: Node 20 is wrong on arm64
+     * too (68 of the 632 exponents in [-323, 308], against 69 on x86-64) and
+     * Node 26 is right on both. Different `mag`, different `norm`, different
+     * branch, different figure bytes.
+     *
+     * So `floor(log10 …)` is used as an approximation and nothing more, then
+     * pinned by exact comparison against [powerOfTen], which comes from a
+     * decimal literal and is therefore the same double on every platform. The
+     * pin is inert for the degenerate inputs: with `e` NaN both comparisons are
+     * false, and with `e` ±∞ the adjustment is a no-op (±∞ ± 1 is ±∞), so
+     * `0`, `-1`, NaN and ∞ still answer what they always answered.
      */
     fun niceStep(range: Double): Double {
         val rough = range / 8
-        val magnitude = powerOfTen(floor(log10(rough)))
+        val magnitude = decadeOf(rough)
         val normalised = rough / magnitude
         var step = 10.0
         if (normalised <= 1.5) step = 1.0
@@ -1562,28 +1601,70 @@ object Plot {
     }
 
     /**
-     * `10^n` for the whole `n` [niceStep] wants — correctly rounded, which
-     * `Math.pow` is not.
+     * The largest power of ten not greater than `rough` — the decade
+     * [niceStep] scales by.
      *
-     * This is the one line of the geometry where the platform had to be taken
-     * out of the loop, and it is not a stylistic call: OpenJDK 21 answers
-     * `Math.pow(10.0, -5.0)` one ULP below the true 1e-5 (…368f0 against
-     * …368f1), and `StrictMath.pow` agrees with it. Rust and V8 both give the
-     * correctly-rounded value, so three of the eighty-one recorded tick
-     * spacings came out one ULP light — a visible defect, because that
-     * magnitude is then multiplied by 1, 2, 5 or 10 and becomes the *step* every
-     * gridline, tick and label of the axis is laid out from.
+     * `floor(log10 rough)` is a guess and is treated as one: `log10` is not
+     * correctly rounded, so at a decade boundary its `floor` can name the
+     * decade above. The guess is then pinned by comparing `rough` against the
+     * exact powers either side of it, which settles the answer identically on
+     * every platform because [powerOfTen] does.
      *
-     * `BigDecimal(unscaled, scale)` is `unscaled × 10^-scale`, so a scale of −n
-     * is exactly 10^n with no rounding at all, and `toDouble()` rounds that
-     * exact decimal once, correctly. ±∞ and NaN have no whole exponent to build
-     * one from, and beyond ±400 every answer is 0 or ∞ exactly — `pow` is right
-     * for all of those, so they go back to it.
+     * Nothing here disturbs the degenerate inputs. With `rough` NaN or negative
+     * the exponent is NaN and both comparisons are false; with `rough` 0 or ∞
+     * the exponent is ∓∞ and the adjustment is a no-op, since ±∞ ± 1 is ±∞.
+     *
+     * `internal` so the test can pin the mechanism, not merely the values it
+     * happens to produce today.
+     */
+    internal fun decadeOf(rough: Double): Double {
+        var exponent = floor(log10(rough))
+        if (powerOfTen(exponent) > rough) exponent -= 1.0
+        else if (powerOfTen(exponent + 1.0) <= rough) exponent += 1.0
+        return powerOfTen(exponent)
+    }
+
+    /**
+     * `10^n` for the whole `n` [niceStep] wants.
+     *
+     * **`pow(10, n)` must never come back here.** It is not correctly rounded
+     * and is not specified to be, so it is a different number on different
+     * *runtime versions*, and this renderer lays a whole axis out from it.
+     * Both bites are measured, by comparing `pow(10, n)` against the decimal
+     * literal `1e<n>` for all 632 integer exponents in [-323, 308]:
+     *
+     *   * **This port's own runtime.** OpenJDK 21 disagrees at 64 of the 632,
+     *     and `StrictMath.pow` at the same 64 — so `StrictMath` is not the way
+     *     out. `Math.pow(10.0, -5.0)` is one ULP below the true 1e-5 (…368f0
+     *     against …368f1), which is how three of the eighty-one recorded tick
+     *     spacings came out one ULP light.
+     *   * **V8, by version, not by CPU.** Node 20 disagrees at 68 exponents on
+     *     arm64 and 69 on x86-64, Node 22 at 68, Node 24 at 2 (e = 23 and 210),
+     *     Node 26 at none. Node 20 is wrong on both architectures and Node 26
+     *     right on both. md.vscode's CI runs Node 20 and went red on v1.2.0
+     *     (fd71a4e); the Mac that reviewed the change runs Node 26 and saw
+     *     nothing. Same source, same input, different figure.
+     *
+     * Darwin libm's `pow` is correct for all 632, so neither Swift port could
+     * see this either. "It passes on this machine" is not evidence about `pow`.
+     *
+     * Parsing a decimal literal is the way out, because *that* conversion is
+     * specified to be correctly rounded in every language this renderer is
+     * ported to — `Double.parseDouble` here, `Number()` in JS, `toDouble()` in
+     * Swift, `parse::<f64>()` in Rust — so `"1e-5".toDouble()` is the nearest
+     * double to 10⁻⁵ on any machine that runs it. [niceStep] is called twice
+     * per figure and figures are memoised, so the parse costs nothing worth
+     * counting.
+     *
+     * Outside the exponent range the answer is 0, ∞ or NaN exactly and no
+     * literal is needed; those are returned directly rather than deferred to
+     * `pow`, so that the name does not appear in this file's geometry at all.
      */
     private fun powerOfTen(exponent: Double): Double {
-        if (!isFiniteNumber(exponent)) return Math.pow(10.0, exponent)
-        if (exponent > 400 || exponent < -400) return Math.pow(10.0, exponent)
-        return BigDecimal(BigInteger.ONE, -exponent.toInt()).toDouble()
+        if (exponent.isNaN()) return Double.NaN
+        if (exponent > 400) return Double.POSITIVE_INFINITY // and +∞
+        if (exponent < -400) return 0.0 // and -∞
+        return "1e${exponent.toInt()}".toDouble()
     }
 
     /** How far past `max` a tick may land and still be drawn: one part in 10⁹ of a step. */
