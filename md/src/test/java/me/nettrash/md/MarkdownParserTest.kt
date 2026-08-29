@@ -1013,6 +1013,9 @@ class MarkdownParserTest {
             "```plantuml\n@startuml\nA->B\n@enduml\n```",
             "```math\n\\int_0^1 x\\,dx\n```",
             "```csv\nName,Role\nAnn,Editor\n```",
+            // The plot fence draws its own `<svg>` in the markup, so it needs no
+            // engine at all — and must not pull one.
+            "```plot\nx: -10..10\nsin(x)\n```",
         )) {
             val html = MarkdownHtml.document(fence, "t", dark = false)
             assertFalse("`$fence` must not be tagged for highlighting", html.contains("class=\"language-"))

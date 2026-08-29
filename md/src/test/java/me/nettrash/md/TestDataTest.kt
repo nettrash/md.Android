@@ -3,10 +3,17 @@
  * md (Android)
  *
  * Fixture-driven tests over the shared testdata corpus (mirrored in the
- * iOS / macOS repos as mdTests/TestData). Every fixture must parse and
- * render, and each per-feature file must carry the construct its name
- * promises, so a fixture edit that loses a feature fails here rather
- * than silently weakening the corpus.
+ * iOS / macOS repos as mdTests/TestData, and in md.vscode as
+ * test/fixtures/testdata). Every fixture must parse and render, and each
+ * per-feature file must carry the construct its name promises, so a
+ * fixture edit that loses a feature fails here rather than silently
+ * weakening the corpus.
+ *
+ * Fifteen of the sixteen fixtures are byte-identical in all four repos, and
+ * a difference in one of them is drift to be fixed. test.md is the
+ * deliberate exception: being the kitchen-sink document, it names the
+ * platform it runs on and the command that builds it, so those few lines
+ * differ per repo on purpose. Do not unify them.
  */
 
 package me.nettrash.md

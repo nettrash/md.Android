@@ -1,7 +1,7 @@
-md 1.3 — richer pages, and more ways out.
+md 1.4 — charts, drawn from the numbers.
 
-• Chemistry with mhchem (\ce, \pu), and syntax-highlighted code in the app's own quiet palette.
-• Graphviz diagrams, plus the full range Mermaid and PlantUML draw.
-• Footnotes, YAML/TOML front matter, and CSV/TSV tables.
-• New exports: HTML, LaTeX, single-document EPUB, and a diagram as SVG.
-• Pick a PDF page size: A4, A5, Letter, Legal, or a paperback trim.
+• New ```plot fence: functions, parametric curves and points, with title, axis labels and legend.
+• Ranges, grid, axes and a colour per series — sin(x) * exp(-abs(x)/5) is one line.
+• Plain vector drawn by the app: no engine, no network, crisp in preview, print, PDF, HTML and EPUB.
+• Save a plot on its own with Export Diagram as SVG.
+• Every file now reopens in the view you left it in — Edit, Split or Preview.

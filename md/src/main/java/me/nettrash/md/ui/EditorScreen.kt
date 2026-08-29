@@ -9,8 +9,14 @@
  * and Preview, with Split showing the two panes side by side and re-rendering
  * as you type (side by side when there's room, stacked when the Split window
  * itself is narrow); a phone-width window offers only Edit and Preview, like
- * iPhone. The chosen mode is remembered across configuration changes. Mirrors
- * the iOS `DocumentView.swift`.
+ * iPhone. The chosen mode is remembered across configuration changes, and
+ * per file: a document comes back in the mode it was left in, while one the
+ * app has not seen before opens in Edit when it is empty, in Split where
+ * Split exists, and in Preview on a narrow window where it does not. Book
+ * articles are exempt, so stepping through chapters never changes the pane,
+ * and jumping to a heading from the Contents menu only *nudges* the preview
+ * on screen for as long as you are reading there — it never rewrites what the
+ * file is remembered as. Mirrors the iOS `DocumentView.swift`.
  *
  * Documents are opened, created and saved through the Storage Access
  * Framework (Android's document architecture). Save writes back to the
@@ -80,6 +86,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -121,8 +128,89 @@ fun EditorScreen(viewModel: DocumentViewModel) {
     // the window widens again.
     val isWide = isWideLayout(LocalConfiguration.current.screenWidthDp)
     var mode by rememberSaveable { mutableStateOf(Mode.SPLIT) }
-    val currentMode = effectiveMode(mode, isWide)
+    // A *navigation nudge*, and the whole of the distinction this screen has
+    // to keep: picking a mode is a deliberate layout choice and is persisted,
+    // while merely going somewhere — today only a Contents tap, which has to
+    // put the preview on screen before it can scroll it to a heading — is
+    // not. The nudge overrides what is DISPLAYED and nothing else: it writes
+    // nothing to the per-file memory, and it is dropped the moment the reader
+    // picks a mode from the switch or opens another document. That is exactly
+    // how these apps behaved before per-file memory existed, when the mode
+    // was session-only: a jump moved you, and it was never a preference.
+    //
+    // `rememberSaveable`, like `mode`: a rotation is neither a mode pick nor
+    // a document change, and the reader is still parked at the heading they
+    // jumped to, so dropping the nudge there would throw them back into the
+    // other pane for no reason they could see.
+    var navigationMode by rememberSaveable { mutableStateOf<Mode?>(null) }
+    // What is on screen: the nudge if there is one, otherwise the file's
+    // preference — then coerced to fit the window. The persisted preference
+    // is `mode` alone and is read from there, never from here.
+    val currentMode = effectiveMode(navigationMode ?: mode, isWide)
     var menuOpen by remember { mutableStateOf(false) }
+
+    // Per-file view-mode memory (see `ViewMode.kt`): a file comes back in the
+    // mode it was left in, and one the app has never seen opens in Edit when
+    // it is empty, Split where Split exists, and Preview on a narrow window
+    // where it does not. The store gets the application context because it
+    // outlives any one composition and must not pin the Activity.
+    val viewModeStore = remember { ViewModeStore(context.applicationContext) }
+    // The identity the current document's mode is remembered under, or null
+    // for a document that has none (untitled, shared-in text, an imported
+    // pack). Recomputed only when the backing URI changes.
+    val viewModeIdentity = remember(viewModel.uri) { viewModeStore.identityFor(viewModel.uri) }
+
+    // Apply the open rule once per document — keyed on the ViewModel's
+    // document token, which is bumped as the LAST statement of every path
+    // that replaces the open document, so `text` and `uri` are already the
+    // new document's by the time this runs. `text` is deliberately read HERE
+    // and not at composition time: `loadAsync` fills it only when its
+    // provider read lands, long after the composition that started it.
+    //
+    // `appliedToken` survives configuration changes, so a rotation cannot
+    // re-run the rule and throw away a mode the reader chose on an untitled
+    // buffer.
+    var appliedToken by rememberSaveable { mutableLongStateOf(-1L) }
+    LaunchedEffect(viewModel.documentToken) {
+        val token = viewModel.documentToken
+        if (token == appliedToken) return@LaunchedEffect
+        appliedToken = token
+        // A different document is on screen, so wherever the reader had
+        // navigated to in the last one is gone and its nudge goes with it.
+        // Before the book check, because a chapter step is a document change
+        // too.
+        navigationMode = null
+        // A book article is exempt on all three ports: stepping to the next
+        // chapter must neither read the memory nor write it, or a writer
+        // would be dropped into Preview on the chapter they came to write.
+        if (!remembersViewMode(viewModel.isBookArticle)) return@LaunchedEffect
+        val opened = openViewMode(
+            remembered = viewModeStore.remembered(viewModeIdentity),
+            isEmptyDocument = viewModel.text.isEmpty(),
+            hasFileIdentity = viewModeIdentity != null,
+            isWide = isWide,
+        )
+        // The RAW mode, never `effectiveMode`'s output: a remembered Split
+        // shown as Edit on a phone must still be Split when the window widens
+        // again, and must still be Split the next time the file is opened.
+        mode = opened
+        viewModeStore.remember(viewModeIdentity, opened)
+    }
+
+    // Adopting a mode from the switch is the deliberate layout choice, and
+    // the only thing the memory records — the raw choice, against the current
+    // document. It also clears any navigation nudge: the reader has just said
+    // what they want on screen, so the transient override has nothing left to
+    // say, and the switch they just used goes back to showing their own
+    // preference. A book article and a document with no identity store
+    // nothing.
+    fun chooseMode(chosen: Mode) {
+        mode = chosen
+        navigationMode = null
+        if (remembersViewMode(viewModel.isBookArticle)) {
+            viewModeStore.remember(viewModeIdentity, chosen)
+        }
+    }
 
     // Document structure, recomputed only when the text changes: the outline
     // feeds the table-of-contents action, the notes feed the Notes… panel.
@@ -194,7 +282,28 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
             }
-            viewModel.saveAs(it)
+            // Save As is NOT a document change — the writer stays in the same
+            // document and the same pane, and the ViewModel deliberately does
+            // not bump its token — so the open rule must not re-run here. The
+            // memory does move: the mode they are in right now becomes the
+            // mode this newly created file will open in.
+            //
+            // Not gated on `isBookArticle`: saving a book article as a new
+            // file makes it an ordinary standalone document, and `saveAs`
+            // clears the flag for exactly that reason. Skipping the write
+            // here would leave the new file with no memory at all AND — the
+            // flag being what `remembersViewMode` answers from — leave every
+            // later mode change on it unrecorded until the next document was
+            // opened.
+            // The RAW `mode` is what moves across — never `currentMode`, and
+            // never `navigationMode`: Save As must immortalise the file's
+            // actual preference, not the pane a Contents tap happens to be
+            // showing while the reader looks something up. The two are
+            // deliberately kept apart rather than folded into one accessor
+            // for exactly this reason.
+            if (viewModel.saveAs(it)) {
+                viewModeStore.remember(viewModeStore.identityFor(it), mode)
+            }
         }
     }
     // Export as PDF: the user picks the destination first, then the document
@@ -412,6 +521,17 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                     // headings. Tapping an entry makes sure the preview is on
                     // screen (Edit flips to Preview; Split and Preview already
                     // show it) and scrolls it to that heading's anchor.
+                    //
+                    // The flip is decided from `currentMode` — what is on
+                    // screen — because whether the preview is visible is the
+                    // only question being asked (see `contentsTapMode`). It
+                    // is adopted as a transient `navigationMode` and NOT
+                    // through `chooseMode`: reading a heading is navigation,
+                    // not a layout choice, so it must leave the file's
+                    // remembered mode exactly as it was. On a narrow window
+                    // that is what lets a file remembered as Split — rendered
+                    // as Edit there — show the preview for the jump and still
+                    // be Split the next time it is opened.
                     Box {
                         IconButton(onClick = { contentsOpen = true }, enabled = outline.isNotEmpty()) {
                             Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Contents")
@@ -430,7 +550,7 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                     },
                                     onClick = {
                                         contentsOpen = false
-                                        if (currentMode == Mode.EDIT) mode = Mode.PREVIEW
+                                        contentsTapMode(currentMode)?.let { navigationMode = it }
                                         previewNavigation = PreviewNavigation(
                                             id = (previewNavigation?.id ?: 0L) + 1,
                                             slug = entry.slug,
@@ -440,7 +560,7 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                             }
                         }
                     }
-                    ModeSwitch(availableModes(isWide), currentMode) { mode = it }
+                    ModeSwitch(availableModes(isWide), currentMode) { chooseMode(it) }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "More")
@@ -703,13 +823,16 @@ fun EditorScreen(viewModel: DocumentViewModel) {
 
     // The book navigator. Composed only while open, so its listing is
     // re-read from the tree on every opening (see BookSheet). Articles open
-    // through loadAsync — the provider read must not stall the UI.
+    // through loadAsync — the provider read must not stall the UI — and are
+    // flagged as coming from the book, which exempts them from per-file
+    // view-mode memory: a chapter step keeps the writer in the pane they are
+    // working in (see `ViewMode.kt`).
     if (bookSheetOpen) {
         BookSheet(
             book = bookState,
             pageSizeState = pageSizeState,
             onOpenArticle = { article ->
-                viewModel.loadAsync(article.file.uri, writable = true)
+                viewModel.loadAsync(article.file.uri, writable = true, fromBook = true)
                 bookSheetOpen = false
             },
             onDismiss = { bookSheetOpen = false },

@@ -755,6 +755,13 @@ object LaTeXExport {
             return when (val lang = name.lowercase(Locale.ROOT)) {
                 "mermaid", "plantuml", "puml", "plant-uml" -> diagram(name, code)
                 in MarkdownHtml.graphvizEngines -> diagram(name, code)
+                // The one rich fence this app *can* draw without an engine —
+                // and it still travels as its source. `\includegraphics` reads
+                // no SVG without a conversion step a `.tex` file cannot carry,
+                // so the honest thing is the same treatment a Mermaid diagram
+                // gets: every number the author wrote, under a comment naming
+                // the language.
+                "plot" -> diagram(name, code)
                 // Already a table everywhere else in the app; the parse and
                 // the alignment rule are shared with the HTML renderer so
                 // the same spreadsheet lands the same way in both.

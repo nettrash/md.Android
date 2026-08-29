@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The `versionCode` is auto-incremented on every build by a Gradle finalizer
 (mirroring the iOS app's `agvtool bump`) and is not tracked here.
 
+## [1.4] — 2026-08-29
+
+### Added
+
+- **Plots.** A fenced block tagged `plot` is now drawn as a real chart —
+  functions of `x`, parametric curves and plain `x,y` points, several to a
+  figure, with a title, axis labels and a legend:
+
+  ````
+  ```plot
+  x: -10..10
+  y: -2..2
+  title: Damped oscillation
+  envelope = exp(-abs(x)/5)
+  sin(x) * exp(-abs(x)/5)
+  ```
+  ````
+
+  The whole figure is **plain SVG written by the app itself** — no engine, no
+  bundled library, no script and no network — so unlike every other rich block
+  it is already finished in the markup, and it therefore reaches the preview,
+  print, an exported PDF, exported HTML and an **EPUB** as crisp vector at a
+  fraction of a screenshot's size — the default figure is 16,888 bytes as
+  vector against 169,108 as a picture. A LaTeX export keeps the fence source
+  under a comment, as it does for the other diagram languages, since LaTeX
+  reads no SVG without a conversion step a `.tex` file cannot carry. A
+  document that holds nothing but plots loads no engine at all. It can also
+  be saved on its own through **Export Diagram as SVG…**, beside Mermaid,
+  Graphviz and PlantUML.
+
+  Directives are `x`, `y` (a range or `auto`), `title`, `xlabel`, `ylabel`,
+  `legend`, `grid`, `axes`, `width`, `height` and `samples`; a range end may
+  itself be an expression, so `x: -pi..2*pi` works. The expression language
+  has the usual arithmetic and comparisons, the constants `pi` and `e`, and
+  `sin cos tan asin acos atan sinh cosh tanh asinh acosh atanh sqrt cbrt abs
+  exp exp2 ln log2 log10 floor ceil round atan2 pow hypot`. Values that are
+  undefined or off the chart break the curve rather than the figure, which is
+  what draws `tan(x)` as branches instead of one spike, and a block that
+  cannot be read keeps the author's own text visible under one `plot:` line.
+
+  The geometry is the same as the plotter on **nettrash.me**, so a figure
+  lands where that one draws it — but with its bugs fixed rather than
+  inherited: `floor`, `ceil` and `round` draw (they silently drew nothing
+  there), a comparison is a number so `(x > 0) * sqrt(x)` is the half-domain
+  idiom it looks like, `^` groups to the right (`2^3^2` is 512), division is
+  real division (`5/2` is 2.5), tick labels are rounded rather than truncated,
+  and tick positions are computed rather than accumulated, so the tick at the
+  origin reads `0`. The renderer is written from scratch and ships the same
+  figure, byte for byte, on iOS, macOS, Android and in VS Code.
+- **Every file remembers how you were reading it.** md now keeps the view
+  mode — Edit, Split or Preview — for each document it opens, so a file comes
+  back the way you left it rather than in whatever pane the last document
+  happened to use. Switch a long reference note to Preview once and it opens
+  in Preview every time; keep a draft in Edit and it stays in Edit.
+
+  A file md has never seen before still opens the way it always has where
+  there is room for it: a tablet, an unfolded foldable or a desktop window
+  opens it in **Split**, unchanged. On a phone, where Split is not offered at
+  all, a file with something in it now opens in **Preview** — the reader's
+  side of the app — instead of dropping you into the raw source. A brand-new
+  or empty document opens in **Edit** everywhere, because there is nothing yet
+  to read.
+
+  A Split you chose is kept as Split even while a narrow window is showing it
+  as Edit, so rotating the phone, unfolding, or opening the same file on a
+  tablet brings the two panes straight back. Only a mode you *pick* is
+  remembered: jumping to a heading from the Contents menu still brings the
+  preview up so you can see where you landed, but that is a move, not a
+  preference, and the file opens next time in the mode you actually chose.
+  **Book articles are deliberately
+  exempt**: stepping from chapter to chapter in the writer-mode book keeps you
+  in the pane you are working in, and never quietly turns the next chapter
+  read-only. The memory holds the 200 most recently opened files, lives only
+  on the device (nothing is uploaded, and it is the same key and the same
+  format as the iOS and macOS versions), and is keyed by the document itself —
+  renaming or moving a file outside md simply lets it re-enter as a new one.
+
 ## [1.3] — 2026-07-24
 
 ### Added

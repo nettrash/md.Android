@@ -60,9 +60,34 @@ Mermaid, Graphviz, PlantUML, and highlight.js for code).
   carried through to print and Save as PDF. A raw `.puml` or `.gv` file
   handed in from a file manager opens and renders as the diagram it
   describes, source still editable.
+- **Plots.** A ` ```plot ` fence is drawn as a chart: functions of `x`,
+  parametric curves and plain `x,y` points, several series to one figure,
+  each in its own colour and named in a legend. The directives are the
+  ranges `x:` and `y:` (`auto` unless you give it one), `title:`,
+  `xlabel:`, `ylabel:`, `legend:`, `grid:`, `axes:`, `width:`, `height:`
+  and `samples:`; the expression language has the usual arithmetic and
+  comparisons, the constants `pi` and `e`, and `sin cos tan asin acos atan
+  sinh cosh tanh asinh acosh atanh sqrt cbrt abs exp exp2 ln log2 log10
+  floor ceil round atan2 pow hypot`. Unlike the blocks above it needs no
+  engine: the app draws the figure itself, as plain SVG, so nothing is
+  bundled for it, nothing is downloaded, and it adds nothing to the app's
+  size. The vector carries through to the preview, print, Save as PDF,
+  the exported HTML and the **EPUB** — where it is the one rich block that
+  stays a vector, the rest being written into the book as pictures — and a
+  single plot can be saved with **Export Diagram as SVG**. A LaTeX export
+  keeps the fence's source under a comment, the same treatment Mermaid,
+  Graphviz and PlantUML get there. A fence that can't be read shows one
+  `plot: …` line above its own source, rather than a hole or an error box.
 - **Three layouts.** *Edit*, *Split* (side by side, re-rendering as you
-  type — it stacks on a narrow screen) and *Preview*, chosen with a
-  segmented control in the app bar. The layout is remembered.
+  type — it stacks when the window is too narrow for two columns) and
+  *Preview*, chosen with a segmented control in the app bar. The layout is
+  remembered **for each file**, so a document comes back in the one you
+  left it in; the 200 most recently opened are kept, on the device. A file
+  the app hasn't seen before opens in Split where there is room for Split —
+  a tablet, an unfolded foldable, a desktop window — and in Preview on a
+  phone, where Split isn't offered anyway; a new or empty document opens in
+  Edit. Articles in a book are the exception, and keep one layout, so
+  stepping from chapter to chapter doesn't change the pane you're in.
 - **Typewriter feel.** Warm paper background (light "fresh paper" / dark
   "carbon paper") and a serif prose face throughout, with a monospace face
   for code — the Android stand-ins for the iOS app's American Typewriter /
@@ -77,8 +102,9 @@ Mermaid, Graphviz, PlantUML, and highlight.js for code).
   **EPUB** e-book with the document's own headings as its table of
   contents, export it as LaTeX `.tex` source (formulas as the `$…$` you
   typed rather than a picture of them, ready to paste into a paper), export
-  a single **diagram** (Mermaid, Graphviz or PlantUML — math is HTML text,
-  not a drawing, so it isn't offered) as a standalone `.svg` vector file,
+  a single **diagram** (Mermaid, Graphviz, PlantUML or a plot — math is
+  HTML text, not a drawing, so it isn't offered) as a standalone `.svg`
+  vector file,
   export the document as a **TextPack** with any local images it references
   gathered into the pack's `assets/`, or share the raw Markdown source. No
   network access.

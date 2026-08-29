@@ -24,7 +24,8 @@ class ExamplesTest {
     /** The root example files, exactly as the Examples menu lists them. */
     private val rootExamples = listOf(
         "01-Welcome.md", "02-Formatting.md", "03-Tables.md", "04-Code.md",
-        "05-Images.md", "06-Math.md", "07-Diagrams.md", "08-Writer Tools.md",
+        "05-Images.md", "06-Math.md", "07-Diagrams.md", "08-Plots.md",
+        "09-Writer Tools.md",
     )
 
     /** The example book's articles, relative to its folder. */

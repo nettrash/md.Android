@@ -376,9 +376,13 @@ object Exporter {
      * writing a blank file.
      *
      * [ordinal] is the diagram's 0-based document-order position among
-     * `pre.mermaid, div.plantuml, div.graphviz` — the diagram half of the
-     * selector [EpubExporter] captures, and exactly the index
+     * `pre.mermaid, div.plantuml, div.graphviz, div.plot` — exactly the index
      * `DiagramSvg.diagrams` assigns, so the menu row and the DOM node pair up.
+     * That selector is this path's alone: it is neither a subset nor a superset
+     * of the EPUB's rich-container list, which drops `div.plot` (already vector
+     * in the markup, so there is nothing to photograph) and keeps the formulas
+     * (which this path has no vector to offer for). Change one and the other
+     * does not follow.
      * `dark = false`: a `.svg` carries no screen theme (Mermaid bakes its own
      * colours into the SVG; Graphviz/PlantUML draw explicit ink). `export = true`
      * only to keep the same page the other captures use.
@@ -412,9 +416,10 @@ object Exporter {
     }
 
     /** Read the chosen diagram's rendered `<svg>` outerHTML out of [view]'s DOM
-     *  and turn it into a standalone `.svg`. The query is the diagram half of
-     *  the EPUB selector, indexed by [ordinal]; a container with no `<svg>`
-     *  (a failed / timed-out engine) comes back null and the export surfaces an
+     *  and turn it into a standalone `.svg`. The query names the four diagram
+     *  families `DiagramSvg.classify` recognises, indexed by [ordinal]; a
+     *  container with no `<svg>` (a failed / timed-out engine, or a plot the
+     *  renderer could not parse) comes back null and the export surfaces an
      *  error rather than writing an empty file. The result arrives as a
      *  JSON-encoded string through `evaluateJavascript` (as in [captureHtml]),
      *  so `null` must not be written out as the four characters "null". The
@@ -422,7 +427,14 @@ object Exporter {
      *  teardown discipline the other captures use. */
     private fun captureDiagramSvg(view: WebView, ordinal: Int, done: (ByteArray?) -> Unit) {
         val script =
-            "(function(){var n=document.querySelectorAll('pre.mermaid, div.plantuml, div.graphviz');" +
+            // `div.plot` is here and deliberately *not* in the EPUB's rich
+            // selector: the EPUB path photographs elements whose drawing the
+            // markup does not contain, and a plot is already an `<svg>` in the
+            // string the renderer returned. It is still a diagram a reader can
+            // save, and `DiagramSvg.classify` counts it, so this query has to
+            // find it or every later figure exports as the wrong one.
+            "(function(){var n=document.querySelectorAll(" +
+                "'pre.mermaid, div.plantuml, div.graphviz, div.plot');" +
                 "var e=n[$ordinal];if(!e)return null;var s=e.querySelector('svg');" +
                 "return s?s.outerHTML:null;})()"
         view.evaluateJavascript(script) { value ->

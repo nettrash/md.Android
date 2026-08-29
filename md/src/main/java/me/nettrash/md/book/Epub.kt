@@ -120,7 +120,21 @@ internal data class RichElement(val range: IntRange, val kind: String)
  *  `…data-engine="circo">`, …), so a whole-tag literal would recognize
  *  none of them — every DOT diagram would ship to the reader as raw source
  *  text. Matching the prefix still leaves the `data-engine` attribute
- *  inside the element, so the closing-tag search is unaffected. */
+ *  inside the element, so the closing-tag search is unaffected.
+ *
+ *  `div.plot` is deliberately absent, and that is the whole EPUB story for
+ *  the ```plot fence. These containers exist to photograph drawings the
+ *  markup does not contain — a Mermaid `<pre>` holds diagram source, a maths
+ *  span holds TeX — whereas a plot is *already* an `<svg>` element in the
+ *  body this scan runs over. Measured on **this renderer's** default figure,
+ *  the bare `sin(x)` fence: 16,888 bytes of vector in the body (16,864 of them
+ *  the `<svg>` element, 24 the container around it) against a 169,108-byte PNG
+ *  of the same chart, and a plot-only document never has to open a WebView at
+ *  all. Do not quote the site's 16,737 here: nettrash.me draws the same chart
+ *  smaller because its markup lacks the `role`, the `<title>` and the
+ *  `currentColor` ink this one emits, so it is a figure about different bytes.
+ *  The cost of all this is the manifest property `svg` on any content document
+ *  that holds one, which [contentOpf] now writes. */
 private val RICH_MARKERS = listOf(
     "<span class=\"md-mathi\">" to ("</span>" to "formula"),
     "<span class=\"md-mathd\">" to ("</span>" to "formula"),
@@ -223,7 +237,16 @@ internal fun contentOpf(book: EpubBook, identifier: String, modified: String): S
     append("<item id=\"style\" href=\"style.css\" media-type=\"text/css\"/>\n")
     for (unit in book.units) {
         append("<item id=\"").append(unitId(unit)).append("\" href=\"").append(unit.fileName)
-            .append("\" media-type=\"application/xhtml+xml\"/>\n")
+            .append("\" media-type=\"application/xhtml+xml\"")
+            // EPUB 3 requires the reserved manifest property `svg` on every
+            // content document that contains an `<svg>` element; EPUBCheck
+            // reports OPF-014 without it and the book is invalid. No EPUB this
+            // app produced had ever held one until the ```plot fence — the
+            // body here is the finished XHTML with the rich blocks already
+            // replaced by their PNG snapshots, so an `<svg>` still in it is one
+            // the markup itself carries, which today means a plot.
+            .append(if (unit.body.contains("<svg")) " properties=\"svg\"" else "")
+            .append("/>\n")
     }
     for ((index, image) in book.images.withIndex()) {
         append("<item id=\"img-").append(index).append("\" href=\"").append(image.fileName)
@@ -359,6 +382,8 @@ internal val EPUB_CSS: String = """
     table { border-collapse: collapse; margin: 1em 0; }
     th, td { border: 1px solid rgba(128, 128, 128, 0.5); padding: 0.3em 0.6em; }
     img { max-width: 100%; }
+    .plot { margin: 1em 0; text-align: center; }
+    .plot svg { max-width: 100%; height: auto; }
     .md-item { margin: 0.2em 0; }
     .md-item.done { opacity: 0.65; }
     .md-marker { margin-right: 0.5em; }

@@ -349,6 +349,18 @@ object MarkdownHtml {
             // without hand-editing a grid of pipes.
             "csv", "tsv" -> renderDelimited(block.code, if (lang == "tsv") '\t' else ',')
             "math", "latex", "tex" -> "<div class=\"md-mathd\">${escape(block.code)}</div>"
+            // The one rich block with no engine behind it. `Plot.renderPlot` is
+            // pure and synchronous and lives in this same layer, so the finished
+            // `<svg>` is already in the string every surface receives: the
+            // preview, the self-contained HTML, print, PDF, EPUB and the SVG
+            // export all work with no script, no asset and no rasterisation
+            // step, and a plot-only document never loads an engine at all.
+            //
+            // The container is emitted whatever happens — a good plot, an empty
+            // block and a broken one alike — because the SVG export pairs a
+            // figure with its source block by counting `div.plot` containers in
+            // document order.
+            "plot" -> Plot.renderPlot(block.code)
             // A fenced block with a real code language (```swift, ```js, …) is
             // tagged for highlight.js, which highlightElement()s it in the
             // WebView (see md-init.js). The diagram / math / data languages are
@@ -903,11 +915,23 @@ object MarkdownHtml {
             .md-item.done { color: $muted; text-decoration: line-through; }
             /* Rich blocks: diagrams and formulas render as SVG/markup, not code —
                drop the code-block chrome, centre them, and let them scroll if wide. */
-            .mermaid, .plantuml, .graphviz, .md-mathd {
+            .mermaid, .plantuml, .graphviz, .plot, .md-mathd {
                 background: none; padding: 6px 0; margin: 0 0 0.9em;
                 overflow-x: auto; text-align: center;
             }
-            .mermaid svg, .plantuml svg, .graphviz svg { max-width: 100%; height: auto; }
+            /* `.plot` is in the cap rule for the same reason as the engines:
+               its figure is an SVG element too — the only difference is that the
+               markup already carries it, with no engine to wait for. Without a
+               cap a 2000px figure would scroll a phone-width page sideways.
+               (Spelled out in words rather than as a tag, on purpose: this
+               comment is interpolated into the style element of every document
+               this renderer emits, and Epub.contentOpf decides the manifest
+               property `svg` by searching a content document for that literal.
+               Epub.documentBody keeps the head out of the EPUB body — and falls
+               back to the WHOLE document when it finds no body tag — so a tag
+               written here is one slice away from marking every book as holding
+               a figure it does not. PlotTest asserts the sheet stays clean. */
+            .mermaid svg, .plantuml svg, .graphviz svg, .plot svg { max-width: 100%; height: auto; }
             /* Graphviz draws in plain black on a transparent ground (md-init.js
                asks for `bgcolor=transparent`). Recolor it to the page's ink here,
                in CSS, rather than passing colors to the engine: these are

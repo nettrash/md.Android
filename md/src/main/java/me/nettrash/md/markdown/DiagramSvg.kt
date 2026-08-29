@@ -30,17 +30,27 @@ import java.util.Locale
 
 object DiagramSvg {
 
-    enum class Kind { MERMAID, PLANTUML, GRAPHVIZ }
+    enum class Kind { MERMAID, PLANTUML, GRAPHVIZ, PLOT }
 
     /** One diagram the document offers for SVG export, in document order. */
     data class Diagram(
         /** 0-based position among the document's diagrams — the same order
-         *  `querySelectorAll('pre.mermaid, div.plantuml, div.graphviz')` reports
-         *  the rendered containers in, so the capture step pulls the matching
-         *  `<svg>` back out by this index. The DOM query and this list both walk
-         *  the document in order and both see only diagrams, so they pair up
-         *  index-for-index — the diagram subsequence of `findRichElements`, with
-         *  the formulas (which have no vector) dropped. */
+         *  `querySelectorAll('pre.mermaid, div.plantuml, div.graphviz,
+         *  div.plot')` reports the rendered containers in, so the capture step
+         *  pulls the matching `<svg>` back out by this index. That selector,
+         *  written out in `ui/Exporter.captureDiagramSvg`, is the one this list
+         *  must stay in step with: both walk the document in order, both see
+         *  exactly the four diagram families, so they pair up index-for-index.
+         *
+         *  It is **not** the EPUB's rich-container selector, and this pairing is
+         *  the reason to say so out loud. `Epub.RICH_MARKERS` leaves `div.plot`
+         *  out on purpose — those containers exist to photograph drawings the
+         *  markup does not contain, and a plot is already an `<svg>` in the
+         *  markup — and it carries the formulas, which this list drops because
+         *  a formula has no vector to export. Two selectors, deliberately
+         *  different in both directions; adding `plot` to the EPUB's list or
+         *  dropping it from the capture query would each shift a figure onto the
+         *  wrong ordinal. */
         val ordinal: Int,
         val kind: Kind,
         /** The Graphviz layout program (`dot` / `neato` / …) for a graphviz
@@ -58,6 +68,7 @@ object DiagramSvg {
                 Kind.MERMAID -> "Mermaid"
                 Kind.PLANTUML -> "PlantUML"
                 Kind.GRAPHVIZ -> if (engine != null && engine != "dot") "Graphviz ($engine)" else "Graphviz"
+                Kind.PLOT -> "Plot"
             }
 
         /** The menu row: the type, plus the source label when there is one. */
@@ -116,6 +127,13 @@ object DiagramSvg {
         when (val lang = (language ?: "").lowercase(Locale.ROOT)) {
             "mermaid" -> Kind.MERMAID to null
             "plantuml", "puml", "plant-uml" -> Kind.PLANTUML to null
+            // A plot is a diagram here even though no engine draws it: the
+            // renderer put a real `<svg>` in the container, which is exactly
+            // what this command saves. It is also why the capture selector in
+            // `ui/Exporter` must list `div.plot` — a container this walk counts
+            // and the DOM query does not would shift every later diagram onto
+            // the wrong figure.
+            "plot" -> Kind.PLOT to null
             else -> MarkdownHtml.graphvizEngines[lang]?.let { Kind.GRAPHVIZ to it }
         }
 
