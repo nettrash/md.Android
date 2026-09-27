@@ -248,6 +248,38 @@ class BookOrderTest {
         assertTrue(compiled.contains(article))
     }
 
+    // bookStep - Previous / Next Article (Ctrl+Alt+Up / Ctrl+Alt+Down)
+
+    private val order = listOf("uri:intro.md", "uri:ch1/a.md", "uri:ch1/b.md")
+
+    @Test fun steppingMovesOnePlaceAlongTheReadingOrder() {
+        assertEquals("uri:ch1/a.md", bookStep(order, "uri:intro.md", 1))
+        assertEquals("uri:ch1/b.md", bookStep(order, "uri:ch1/a.md", 1))
+        assertEquals("uri:ch1/a.md", bookStep(order, "uri:ch1/b.md", -1))
+        assertEquals("uri:intro.md", bookStep(order, "uri:ch1/a.md", -1))
+    }
+
+    /** The first article has no previous and the last has no next, and
+     *  neither is an error worth saying anything about - the chord does
+     *  nothing, like the iOS port's `BookTree.step`. */
+    @Test fun steppingOffEitherEndDoesNothing() {
+        assertNull(bookStep(order, "uri:intro.md", -1))
+        assertNull(bookStep(order, "uri:ch1/b.md", 1))
+    }
+
+    @Test fun aDocumentThatIsNotInTheBookDoesNothing() {
+        assertNull(bookStep(order, "uri:somewhere-else.md", 1))
+        assertNull(bookStep(order, "uri:somewhere-else.md", -1))
+        assertNull(bookStep(emptyList(), "uri:intro.md", 1))
+    }
+
+    @Test fun aBookOfOneArticleGoesNowhereInEitherDirection() {
+        val one = listOf("uri:only.md")
+        assertNull(bookStep(one, "uri:only.md", 1))
+        assertNull(bookStep(one, "uri:only.md", -1))
+        assertEquals("uri:only.md", bookStep(one, "uri:only.md", 0))
+    }
+
     @Test fun compiledBookParsesWithItsPageBreaks() {
         val compiled = compileBook(
             "Book",

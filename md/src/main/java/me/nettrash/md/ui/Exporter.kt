@@ -35,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.nettrash.md.DocumentTypes
 import me.nettrash.md.TextBundle
 import me.nettrash.md.book.BookContent
 import me.nettrash.md.markdown.DiagramSvg
@@ -70,11 +71,13 @@ object Exporter {
      *  read-back run on Dispatchers.IO, everything WebView on Main. */
     private val exportScope = MainScope()
 
-    /** Share the raw Markdown source through the system share sheet. */
+    /** Share the raw Markdown source through the system share sheet. [title]
+     *  is the document's display name; the suggested file name swaps its own
+     *  extension for `.md` rather than stacking one (`Notes.mkd.md`). */
     fun shareSource(context: Context, text: String, title: String) {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/markdown"
-            putExtra(Intent.EXTRA_TITLE, "$title.md")
+            putExtra(Intent.EXTRA_TITLE, DocumentTypes.markdownFileName(title))
             putExtra(Intent.EXTRA_SUBJECT, title)
             putExtra(Intent.EXTRA_TEXT, text)
         }

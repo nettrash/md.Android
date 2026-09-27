@@ -106,6 +106,21 @@ internal fun contentsTapMode(displayed: Mode): Mode? =
     if (displayed == Mode.EDIT) Mode.PREVIEW else null
 
 /**
+ * The mirror image, for the find bar: the mode opening Find has to switch to
+ * before a match can be selected and scrolled to, or null when the editor is
+ * already on screen (Edit and Split both show it).
+ *
+ * The same navigation nudge [contentsTapMode] feeds, and for the same reason:
+ * looking something up is not a layout choice, so the answer is adopted into
+ * the screen's transient `navigationMode` and the file's remembered mode is
+ * left exactly as it was. Searching from Preview on a phone therefore shows
+ * the editor for as long as the reader is searching, and the document still
+ * opens in Preview next time.
+ */
+internal fun findTapMode(displayed: Mode): Mode? =
+    if (displayed == Mode.PREVIEW) Mode.EDIT else null
+
+/**
  * The mode a document opens in — the same four-line rule on all three apps.
  *
  *  - a file we have seen before opens in exactly the mode it was left in,

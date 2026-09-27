@@ -1,7 +1,5 @@
-md 1.4 — charts, drawn from the numbers.
-
-• New ```plot fence: functions, parametric curves and points, with title, axis labels and legend.
-• Ranges, grid, axes and a colour per series — sin(x) * exp(-abs(x)/5) is one line.
-• Plain vector drawn by the app: no engine, no network, crisp in preview, print, PDF, HTML and EPUB.
-• Save a plot on its own with Export Diagram as SVG.
-• Every file now reopens in the view you left it in — Edit, Split or Preview.
+• Find and Replace, from the new search button or Ctrl+F: ignores case, wraps around, no regular expressions.
+• Return continues lists, tasks, quotes and tables, and the first letter of a line or sentence is capitalized as you type. Both switch off.
+• Every Markdown spelling opens (.mkd, .mdown, .mdtxt and the rest), plus .plantuml, .iuml, .pu and .gv.
+• A file handed to md opens for editing; unsaved changes ask first.
+• Hardware keyboard: Ctrl+N/O/S/P, Ctrl+1/2/3 for Edit/Split/Preview.

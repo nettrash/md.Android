@@ -19,15 +19,31 @@ Mermaid, Graphviz, PlantUML, and highlight.js for code).
 
 ## Features
 
-- **Document-based.** Open, create and save `.md` / `.markdown` files
-  anywhere through the Storage Access Framework (the system file picker),
-  with the buffer flushed when the app is backgrounded. Plain-text files
-  open too. Open Markdown files handed in from a file manager ("Open with
-  md") or shared text from any app. A **TextPack** (`.textpack`, a zipped
+- **Document-based.** Open, create and save Markdown files anywhere
+  through the Storage Access Framework (the system file picker), with the
+  buffer flushed when the app is backgrounded. Every Markdown spelling
+  opens — `.md`, `.markdown`, `.mdown`, `.markdn`, `.mdtext`, `.mdtxt`,
+  `.mkd`, `.mkdn`, `.mdwn`, `.mkdown` — as do plain-text files (`.txt`,
+  `.text`). Open Markdown files handed in from a file manager ("Open with
+  md") or shared text from any app; md is offered for each of those
+  extensions by name, so a file manager that types `.mkd` as a generic
+  binary still hands it over (extensions are matched as written — lower
+  case, which is what every tool writes). A **TextPack** (`.textpack`, a zipped
   TextBundle — the Markdown-with-images container Ulysses, iA Writer and Bear
   write) opens too, imported as its text for editing (its own `assets/`
   images aren't shown in the preview; a bare `.textbundle` folder isn't
-  opened directly).
+  opened directly). A file handed in that way **opens for editing** and
+  autosaves like any other whenever the app that sent it granted write
+  access — md is offered for "Edit with md" as well as "Open with md". One
+  handed over read-only says so beside its name, with an **Edit…** action
+  that re-opens it through the picker.
+- **Nothing is lost without a word.** A buffer with unsaved changes and
+  nowhere to autosave them — an untitled draft, text shared in from another
+  app, an imported TextPack, a read-only file — asks before it is replaced:
+  **Save**, **Discard** or **Cancel**, whether the replacement is New,
+  Open…, an example, or a document another app just handed over, and on Back
+  as well. A document with a file behind it is never in that position: its
+  edits are a beat from disk, so it keeps saving and leaving in silence.
 - **Live preview.** A built-in renderer covers the everyday Markdown you
   actually write:
   - Headings (`#`–`######`)
@@ -51,15 +67,22 @@ Mermaid, Graphviz, PlantUML, and highlight.js for code).
     own) — gathered under a rule at the foot of the rendered page and
     numbered in the order a reader meets them, each reference linking down
     to its note and each cited note linking back
+
+  The preview renders in a process of its own, and that process can be taken
+  away — a huge diagram, or the system reclaiming memory. md brings it back
+  by itself; if it stops twice in a row, the pane says so in one line and
+  comes back as soon as you edit the document, instead of taking the app
+  down with it.
 - **Math and diagrams.** TeX/LaTeX math (`$…$`, `$$…$$` and ` ```math `) —
   with **chemistry** notation (`\ce{…}` / `\pu{…}`) via the bundled mhchem
   extension — plus **Mermaid** (` ```mermaid `), **Graphviz** (` ```dot `, ` ```graphviz `
   or ` ```gv `, and every layout program — `neato`, `circo`, `fdp`, `sfdp`,
   `twopi`, `osage`, `patchwork` — usable as the block language) and
   **PlantUML** (` ```plantuml `), all drawn on-device by bundled engines and
-  carried through to print and Save as PDF. A raw `.puml` or `.gv` file
-  handed in from a file manager opens and renders as the diagram it
-  describes, source still editable.
+  carried through to print and Save as PDF. A raw PlantUML file (`.puml`,
+  `.plantuml`, `.iuml`, `.pu`) or Graphviz file (`.gv`) handed in from a
+  file manager opens and renders as the diagram it describes, source still
+  editable.
 - **Plots.** A ` ```plot ` fence is drawn as a chart: functions of `x`,
   parametric curves and plain `x,y` points, several series to one figure,
   each in its own colour and named in a legend. The directives are the
@@ -74,7 +97,7 @@ Mermaid, Graphviz, PlantUML, and highlight.js for code).
   size. The vector carries through to the preview, print, Save as PDF,
   the exported HTML and the **EPUB** — where it is the one rich block that
   stays a vector, the rest being written into the book as pictures — and a
-  single plot can be saved with **Export Diagram as SVG**. A LaTeX export
+  single plot can be saved with **Export ▸ Diagram as SVG**. A LaTeX export
   keeps the fence's source under a comment, the same treatment Mermaid,
   Graphviz and PlantUML get there. A fence that can't be read shows one
   `plot: …` line above its own source, rather than a hole or an error box.
@@ -88,6 +111,40 @@ Mermaid, Graphviz, PlantUML, and highlight.js for code).
   phone, where Split isn't offered anyway; a new or empty document opens in
   Edit. Articles in a book are the exception, and keep one layout, so
   stepping from chapter to chapter doesn't change the pane you're in.
+- **Find and Replace.** The **Find** button in the top bar (or Ctrl+F on a
+  hardware keyboard) opens a bar under the
+  app bar with a query box,
+  Previous / Next, a replacement box, **Replace** and **All**. Matching
+  ignores case, wraps around the end of the document and takes the query
+  literally — there are no regular expressions and no options to get wrong,
+  the same one rule md uses on every platform. Replace changes the match you
+  are standing on and moves to the next, so pressing it repeatedly walks the
+  document; **All** replaces every match in one go, and a single Undo takes
+  the whole thing back. Searching from Preview brings the editor on screen
+  for as long as you are searching and puts you back in Preview when you
+  close the bar, without changing the layout the file is remembered in.
+- **Hardware keyboard.** The chords are md's own, the same on Android,
+  Windows, the Mac and the iPad: Ctrl+N new, Ctrl+O open, Ctrl+S save,
+  Ctrl+Shift+S save as, Ctrl+P print, Ctrl+1 / Ctrl+2 / Ctrl+3 for the three
+  layouts, Ctrl+Shift+B for the book, Ctrl+F to find, and Ctrl+Alt+↑ /
+  Ctrl+Alt+↓ to step to the previous or next article of the open book. They
+  answer wherever you are working — with the caret in the editor, in the find
+  bar, or reading in Preview. The editor keeps its own keys — Ctrl+A, Ctrl+Z,
+  Ctrl+Y, Ctrl+X, Ctrl+C and Ctrl+V are the text field's and md never takes
+  them.
+- **Typing.** Return inside a list continues it — the next bullet, the next
+  number, an empty task box, the `>` of a quote, a fresh row under a table —
+  and Return on an empty item ends the list instead; a hardware
+  Shift+Return always inserts a plain line break. The first letter of every
+  line and of every sentence (after `.`, `!` or `?` and a space) is
+  capitalized as you type, Markdown-aware: not inside a code fence, a code
+  span, math, a table or a link address, and never a URL, a path or an
+  `@handle`. md does the capitalizing, so the keyboard's own sentence
+  capitalization is off — which is what keeps code fences lowercase. To keep
+  a word lowercase at a sentence start (`md`, `iOS`, `npm`), delete the
+  capital md wrote and type the letter again; it stays lowercase. Both are
+  switches on the overflow menu's **Typing** page, **Continue Lists and Tables** and
+  **Capitalize Sentences**, on by default and applied to the next keystroke.
 - **Typewriter feel.** Warm paper background (light "fresh paper" / dark
   "carbon paper") and a serif prose face throughout, with a monospace face
   for code — the Android stand-ins for the iOS app's American Typewriter /
@@ -111,7 +168,11 @@ Mermaid, Graphviz, PlantUML, and highlight.js for code).
 
 ## Platform
 
-- Android **16 (API 36)** or later.
+- Android **12 (API 31)** or later.
+- Mermaid diagrams need Android System WebView **94 or later**, which Google
+  Play keeps current on its own. On a WebView that never updates (Android 12
+  shipped with 91), a Mermaid block shows its source text; the other engines —
+  Graphviz, PlantUML, KaTeX, the plots — draw regardless.
 
 ## Build
 

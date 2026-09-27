@@ -189,6 +189,37 @@ class ViewModeTest {
         assertNull(contentsTapMode(Mode.SPLIT))
     }
 
+    // findTapMode - the same nudge, the other way round
+
+    @Test fun openingFindNudgesTheEditorOnScreenAndNothingElse() {
+        // A match is shown by selecting it in the editor, so only a document
+        // displaying Preview has to move; Edit and Split already show it.
+        assertEquals(Mode.EDIT, findTapMode(Mode.PREVIEW))
+        assertNull(findTapMode(Mode.EDIT))
+        assertNull(findTapMode(Mode.SPLIT))
+    }
+
+    @Test fun searchingFromPreviewLeavesTheFilesRememberedModeAlone() {
+        // A file remembered as Preview, searched on a narrow window: the
+        // nudge puts the editor on screen, and the store still says Preview,
+        // so closing the find bar and reopening the file brings it back.
+        val id = ViewModeMemory.idFor("saf:doc:read-me.md")
+        val stored = ViewModeMemory.touched(null, id, Mode.PREVIEW)
+        val raw = ViewModeMemory.lookup(stored, id)!!
+
+        val navigationMode = findTapMode(effectiveMode(raw, isWide = false))
+        assertEquals(Mode.EDIT, navigationMode)
+        assertEquals(Mode.EDIT, effectiveMode(navigationMode ?: raw, isWide = false))
+        assertEquals(Mode.PREVIEW, ViewModeMemory.lookup(stored, id))
+        // And with the nudge dropped, the reader is back where they were.
+        // What drops it is the X on the find bar: `EditorScreen` clears
+        // `navigationMode` in the bar's `onClose`, which is the mirror image
+        // of `openFind` raising it. That half is a screen, not a function,
+        // so `FindNudgeInstrumentedTest` is what proves the button does it —
+        // this line only says what the reader should see once it has.
+        assertEquals(Mode.PREVIEW, effectiveMode(raw, isWide = false))
+    }
+
     // remembersViewMode - book articles are exempt from the memory entirely
 
     @Test fun bookArticlesNeitherReadNorWriteTheStore() {

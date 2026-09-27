@@ -7,6 +7,185 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The `versionCode` is auto-incremented on every build by a Gradle finalizer
 (mirroring the iOS app's `agvtool bump`) and is not tracked here.
 
+## [1.5] — 2026-09-23
+
+### Added
+
+- **Find and Replace.** The new **Find** button in the top bar, beside
+  Contents — or Ctrl+F on a hardware keyboard — opens a bar under the app bar: a query box, Previous
+  and Next, a replacement box, **Replace** and **All**. Matching is the one
+  rule md uses on every platform, and there is nothing to configure: it
+  ignores case, wraps around the end of the document, and takes the query
+  literally. **There are no regular expressions** — a query is the characters
+  you typed. **Replace** changes the match the caret is standing on and moves
+  to the next, so pressing it repeatedly walks the document (standing on
+  nothing, it is a plain Find Next), and a replacement that contains the query
+  is never found again by the step that made it. **All** replaces every match
+  in one pass and goes in as a single edit, so one Undo takes the whole thing
+  back.
+
+  Selecting a match scrolls it into view, and asking for Find while reading in
+  Preview brings the editor on screen for as long as you are searching —
+  closing the bar puts you straight back in Preview, and the layout the file
+  is remembered in is left exactly as it was throughout. **Find inside the
+  preview itself is not offered**: a hit in rendered HTML has no place in the
+  source to take you to, so what you search is always the Markdown you wrote.
+- **Smart typing.** Return inside a bullet, numbered or task list continues
+  it — the next marker, the next number, an empty box — keeps a `>` quote
+  going and adds a row under a table; Return on an empty item ends the list
+  instead. The first letter of every line and of every sentence is capitalized
+  as you type, Markdown-aware: never inside a code fence, a code span, math, a
+  table row or a link address, and never a URL, a path or an `@handle`. md now
+  owns capitalization, so the keyboard's own sentence capitalization is turned
+  off — which is what stops code fences from being capitalized. To keep a word
+  lowercase (`md`, `iOS`, `npm`), delete the capital md wrote and type the
+  letter again; it stays lowercase. A hardware Shift+Return inserts a plain
+  line break, and Undo takes a continued item back on its own, never together
+  with what was typed before or after it.
+
+  Two switches on the overflow menu's new **Typing** page —
+  **Continue Lists and Tables** and **Capitalize Sentences** (preferences
+  `md.continueLists` and `md.capitalizeSentences`, both on by default) — turn
+  either half off, and take effect on the next keystroke. The rules are one
+  specification shared with md on iOS, macOS and Windows, pinned by 1350
+  cross-port vectors run on the JVM and on the device; the editor moved to
+  Compose's state-backed text field to host them.
+- **Every Markdown spelling opens.** md is now associated with the full set
+  of Markdown extensions its siblings on iOS, iPadOS, macOS, Windows and VS
+  Code declare — `.md`, `.markdown`, `.mdown`, `.markdn`, `.mdtext`, `.mdtxt`,
+  `.mkd`, `.mkdn`, `.mdwn`, `.mkdown` — and with the PlantUML aliases `.iuml`
+  and `.pu` beside `.puml` / `.plantuml`. Before, a file manager or another
+  app could only hand md a Markdown file it had typed as `text/markdown` or
+  `text/plain`, and most type anything beyond `.md` / `.markdown` as a generic
+  binary, so "Open with md" never listed the app for a `.mkd`. Each extension
+  is now matched by name as well, `.md` and `.markdown` included so a file
+  manager that mis-types those still opens.
+
+  **Android matches the name as written**, so a lower-case extension is what
+  opens by name — an upper-case `NOTES.MD` still opens when a picker types it
+  as Markdown or plain text, but not on its name alone. Graphviz stays `.gv`
+  only — `.dot` is a Word template type on the Apple and Windows siblings —
+  and a `.textbundle` folder is still not opened directly, the Storage Access
+  Framework hands out no such tree. The in-app Open… picker also lists
+  `text/x-markdown`, the older Markdown registration some providers still
+  emit.
+- **Hardware-keyboard shortcuts.** md answers the chords its siblings answer,
+  off the same table (`md.win`'s `CommandTable`): Ctrl+N new, Ctrl+O open,
+  Ctrl+S save, Ctrl+Shift+S save as, Ctrl+P print, Ctrl+1 / Ctrl+2 / Ctrl+3
+  for Edit / Split / Preview, Ctrl+Shift+B for the book navigator, Ctrl+F for
+  the find bar, and Ctrl+Alt+Up / Ctrl+Alt+Down to step to the previous or
+  next article of the open book in reading order. Every chord answers wherever
+  you are working: with the caret in the editor, in the find bar, or reading
+  in Preview.
+
+  Ctrl+2 does nothing on a window too narrow to show Split, and a chord with
+  nowhere to go — Previous Article with no book, or on the first article —
+  does nothing rather than saying so. The keys the text field owns are
+  untouched: Ctrl+A, Ctrl+Z, Ctrl+Y, Ctrl+X, Ctrl+C and Ctrl+V are not in md's
+  table and never will be. **The chords are not advertised anywhere**: the
+  menu rows do not print them, and md registers nothing with the system's
+  keyboard-shortcuts panel, so the list above is where they are written down.
+
+### Changed
+
+- **A shorter, grouped overflow menu.** The ⋮ menu was one long list of some
+  two dozen rows; it is now a short page of groups — New, Open…, Examples,
+  Save, Save As…; Share, Export, Print…; Book, Notes…, Typing — each with an
+  icon. A group opens in place, with a back arrow at its top: **Export**
+  holds PDF, HTML, EPUB, LaTeX, TextPack and Diagram as SVG, with the PDF
+  page size beside them showing the current choice; **Share** holds the
+  source and the rendered PDF; **Book** holds New, Open, Show and Close
+  Book; **Typing** holds its two switches. Find is no longer repeated in the
+  menu — it is the magnifier right beside it, and Ctrl+F.
+- **md now runs on Android 12 and later**, not only Android 16. Every
+  feature is the same on every supported version, with the differences
+  Android itself draws: before Android 13 the launcher icon is not themed and
+  Back has no predictive animation. Mermaid diagrams need Android System
+  WebView 94 or later — Google Play keeps it current on its own; on a WebView
+  that has never been updated, a Mermaid block shows its source text.
+
+### Fixed
+
+- **Switching views no longer restarts a preview that stopped.** When a
+  diagram stopped the preview twice in a row, going to Edit and back to
+  Preview started it again — twice more — for a document that had not
+  changed. The notice now stays until you edit the document.
+- **"Open with md" opens the file for editing.** A document handed over by
+  Files, Drive, a file manager or a mail client was always opened read-only,
+  so every edit sat in the buffer and the autosave never ran — the file on
+  disk stayed exactly as it was until the writer noticed and did a Save As.
+  md now reads the access the sender actually granted: a document handed
+  over with write access opens as an ordinary editable document and autosaves
+  like one, and the grant is made persistable where the provider allows it,
+  so the same file is still editable the next time it arrives. md is also
+  offered for **"Edit with md"** now — the same documents, the same
+  extensions, since what decides whether a file can be written is the grant
+  on the hand-off and never the action that carried it. A document genuinely
+  handed over read-only is unchanged, except that it now says **Read Only**
+  beside its name instead of looking like every other document, and offers
+  **Edit…** — the file picker, opened at that file, which grants the write
+  access the sender withheld.
+- **Unsaved changes are no longer lost in silence.** A buffer with edits and
+  nowhere to autosave them — an untitled draft, text shared in from another
+  app, an imported TextPack, a read-only document — was replaced without a
+  word by New, Open…, an example, Example Book…, or the next document another
+  app handed over, and walked away from on Back. Each of those now asks
+  first: **Save**, **Discard** or **Cancel**, where Save runs the ordinary
+  Save / Save As and only then goes on (dismissing the Save As picker leaves
+  the document exactly where it was). A document that arrives while the
+  question is on screen waits behind it rather than jumping the queue, and
+  survives a rotation while it waits. Nothing changes for a document with a
+  file behind it: its edits are a beat from disk, so New, Open… and Back
+  stay as immediate and as quiet as they have always been.
+- **The last second of typing survives the document being replaced.** A
+  document with a file behind it is written a beat after you stop typing, and
+  that beat is why md replaces one without asking. But every action that put
+  another document on screen — New, an example, a file another app handed
+  over, stepping to the next article of a book — cancelled the pending write
+  instead of letting it land, so asking for any of them inside that second
+  took up to a second of writing with the old document, in silence and with
+  nothing to undo. Each of them now writes what it still owes the file before
+  it takes the document away. Back was already safe, and a buffer with
+  nowhere to write to is the one md asks about instead.
+- **A preview that dies no longer takes the app with it.** The preview
+  renders in a process of its own, and that process can be taken away —
+  memory pressure, a WebView update landing under the running app, or a
+  Graphviz / PlantUML layout big enough to run it out of memory. md was not
+  answering the event, and Android's documented response to that is to kill
+  the whole app: the editor vanished mid-sentence, taking an untitled
+  buffer with it. md now takes the dead pane off screen and loads the
+  document into a fresh one, which is invisible for everything but a moment
+  of blank paper. Because the diagram that killed the renderer would kill it
+  again, **the retrying stops at the second failure**: with no page rendered
+  in between, the pane shows one quiet line instead of looping, and comes
+  back by itself as soon as the document changes. An edit buys exactly one
+  more attempt, not a fresh pair — in Split every keystroke is an edit, and a
+  document that cannot render must not be handed an endless supply of
+  retries by the writer typing over it. Only a page that gets all the way
+  through its own render resets the count, engines included: a finished
+  load is not enough, because the diagram engines run after it, in exactly
+  the window a diagram kills the process in. So an occasional failure never
+  adds up, and a document that fails every time is given up on.
+- **Save As, export and Share Source no longer stack extensions.** Only
+  `.md` and `.markdown` were stripped before the new extension went on, and
+  only in lower case, so `Notes.mkd` was suggested as `Notes.mkd.md` for Save
+  As and `Notes.mkd.pdf` for a PDF, `diagram.puml` as `diagram.puml.md`, and
+  `NOTES.MD` as `NOTES.MD.md`; Share Source titled every document
+  `Name.md.md`. Every extension md opens is now stripped, in any case, so the
+  suggestions read `Notes.md`, `Notes.pdf`, `diagram.md`, `NOTES.md`.
+- **Split shows its two panes again on a wide window.** On a tablet, an
+  unfolded foldable or a phone in landscape, Split puts the editor and the
+  preview side by side — and showed neither: the window under the app bar was
+  empty except for a line across the top. The divider between the panes was
+  laid out before them and claimed the whole width, leaving each pane zero
+  pixels wide. The divider is now one pixel wide, and each pane gets half the
+  window. Split stacked on a narrower window was not affected.
+- **A document opened while you read the preview starts at the top.** The
+  preview kept the scroll position of the page it replaced, so a file,
+  example or book article opened while you were deep in another came up
+  somewhere in its middle, or on its last paragraph. A different document now
+  always opens at its beginning; editing the same one still keeps your place.
+
 ## [1.4] — 2026-08-29
 
 ### Added

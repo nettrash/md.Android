@@ -31,9 +31,20 @@
             </intent-filter>
 
             <!-- Open Markdown / plain-text documents handed to us by a file
-                 manager, the Files UI, or another app ("Open with md"). -->
+                 manager, the Files UI, or another app ("Open with md").
+
+                 ACTION_EDIT rides along in every document filter below, never
+                 in a filter of its own: a sender that asks for an editor
+                 ("Edit with md") and one that asks for a viewer hand over the
+                 same document, and what decides whether md may write it back
+                 is the grant on the intent, not the action (see
+                 DocumentViewModel.openIncoming). Declaring the two actions
+                 together is also what keeps the sets in step — they cannot
+                 drift apart if there is only one list of `data` elements —
+                 and ManifestDocumentTypesTest pins exactly that. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
@@ -43,16 +54,76 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
-            <!-- Open PlantUML documents (.puml / .plantuml). PlantUML has no
-                 registered MIME type, so match on the filename extension
-                 instead — the bytes are UTF-8 text and open in the editor
-                 exactly like Markdown. `host="*"` is required for the path to
-                 be tested at all. Two filters: one for pickers that tag the
-                 intent with a MIME type, one for those that hand us the URI
+            <!-- Open Markdown documents by NAME as well. The MIME filter above
+                 only fires when the picker types the file, and most type
+                 nothing but `.md` / `.markdown` as Markdown: `.mkd`, `.mdown`,
+                 `.mdtxt` and the other aliases usually arrive as
+                 application/octet-stream, or untyped, and would otherwise never
+                 reach md. So every Markdown extension the app claims (the same
+                 set as the iOS / macOS / Windows / VS Code siblings — see
+                 DocumentTypes.kt, pinned by ManifestDocumentTypesTest) is also
+                 matched by `pathSuffix`, `.md` and `.markdown` included so a
+                 file manager that mis-types those still opens. Same two-filter
+                 shape as PlantUML below, for the same reason.
+
+                 LIMITATION — `pathSuffix` is matched CASE-SENSITIVELY (Android
+                 compares the suffix literally), so `NOTES.MD` or `Readme.Md`
+                 handed in untyped will not match; typed as text/markdown or
+                 text/plain they still open through the MIME filter above. This
+                 is left as is on purpose: a pathPattern / pathAdvancedPattern
+                 spelling of every case combination is unreadable, and lower-case
+                 extensions are what every tool writes. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathSuffix=".md" />
+                <data android:pathSuffix=".markdown" />
+                <data android:pathSuffix=".mdown" />
+                <data android:pathSuffix=".markdn" />
+                <data android:pathSuffix=".mdtext" />
+                <data android:pathSuffix=".mdtxt" />
+                <data android:pathSuffix=".mkd" />
+                <data android:pathSuffix=".mkdn" />
+                <data android:pathSuffix=".mdwn" />
+                <data android:pathSuffix=".mkdown" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathSuffix=".md" />
+                <data android:pathSuffix=".markdown" />
+                <data android:pathSuffix=".mdown" />
+                <data android:pathSuffix=".markdn" />
+                <data android:pathSuffix=".mdtext" />
+                <data android:pathSuffix=".mdtxt" />
+                <data android:pathSuffix=".mkd" />
+                <data android:pathSuffix=".mkdn" />
+                <data android:pathSuffix=".mdwn" />
+                <data android:pathSuffix=".mkdown" />
+            </intent-filter>
+
+            <!-- Open PlantUML documents (.puml / .plantuml / .iuml / .pu).
+                 PlantUML has no registered MIME type, so match on the filename
+                 extension instead — the bytes are UTF-8 text and open in the
+                 editor exactly like Markdown. `host="*"` is required for the
+                 path to be tested at all. Two filters: one for pickers that tag
+                 the intent with a MIME type, one for those that hand us the URI
                  untyped (a filter with a mimeType only matches typed intents,
                  and one without only matches untyped ones). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
@@ -61,9 +132,12 @@
                 <data android:mimeType="*/*" />
                 <data android:pathSuffix=".puml" />
                 <data android:pathSuffix=".plantuml" />
+                <data android:pathSuffix=".iuml" />
+                <data android:pathSuffix=".pu" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
@@ -71,6 +145,8 @@
                 <data android:host="*" />
                 <data android:pathSuffix=".puml" />
                 <data android:pathSuffix=".plantuml" />
+                <data android:pathSuffix=".iuml" />
+                <data android:pathSuffix=".pu" />
             </intent-filter>
 
             <!-- Open Graphviz documents (.gv). Same shape as the PlantUML
@@ -85,6 +161,7 @@
                  Markdown document, the common case, are unaffected. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
@@ -95,6 +172,7 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
@@ -118,6 +196,7 @@
                  ACTION_VIEW does not hand out — that gap is reported, not hidden. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
@@ -128,6 +207,7 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />

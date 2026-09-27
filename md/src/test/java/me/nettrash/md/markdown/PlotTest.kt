@@ -1558,6 +1558,9 @@ internal class JsonValue private constructor(
 ) {
     val isString: Boolean get() = kind == STRING
 
+    /** The JSON literal `null` — what `typing-vectors.json` writes for "no edit" (never the string `"none"`). */
+    val isNull: Boolean get() = kind == NULL
+
     fun string(): String {
         demand(kind == STRING, "string")
         return text

@@ -386,6 +386,33 @@ class BookState(private val context: Context) {
     }
 }
 
+/**
+ * The reading order: the root's articles, then each chapter's — the order the
+ * navigator lists them in and the order [compileBook] writes them in, so
+ * "next" means the same thing in all three places. The same one line as the
+ * iOS app's `BookTree.readingOrder`.
+ */
+internal fun bookReadingOrder(tree: BookTree): List<BookArticle> =
+    tree.articles + tree.chapters.flatMap { it.articles }
+
+/**
+ * The article [offset] places along from [from] in [order], or null when
+ * [from] is not in this book at all or the step runs off either end — the
+ * first article has no previous and the last has no next, and neither is an
+ * error worth saying anything about.
+ *
+ * Pure, over the articles' document URIs as strings, so the arithmetic the
+ * Previous / Next Article chords (Ctrl+Alt+Up / Ctrl+Alt+Down) do is testable
+ * without a book on disk. SAF hands back the same document URI it listed, so
+ * unlike the iOS port there is no path spelling to resolve first.
+ */
+internal fun bookStep(order: List<String>, from: String, offset: Int): String? {
+    val index = order.indexOf(from)
+    if (index < 0) return null
+    val target = index + offset
+    return order.getOrNull(target)
+}
+
 /** The file extensions that count as articles. */
 private val ARTICLE_EXTENSIONS = setOf("md", "markdown", "txt")
 

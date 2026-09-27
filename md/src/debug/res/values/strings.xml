@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The debug build's launcher and "Open with" name. It installs beside the
+     Play copy under its own application id (see md/build.gradle.kts), so the
+     two need telling apart on the home screen and in every chooser. -->
+<resources>
+    <string name="app_name">md debug</string>
+</resources>

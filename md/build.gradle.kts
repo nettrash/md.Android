@@ -33,7 +33,7 @@ val storedVersionCode: Int = run {
 }
 
 val resolvedVersionName: String =
-    (project.findProperty("versionName") as String?)?.takeIf { it.isNotBlank() } ?: "1.4"
+    (project.findProperty("versionName") as String?)?.takeIf { it.isNotBlank() } ?: "1.5"
 
 val skipVersionBump: Boolean = project.hasProperty("noBump")
 
@@ -73,10 +73,16 @@ android {
 
     defaultConfig {
         applicationId = "me.nettrash.md"
-        // Mirror iOS / macOS md on Android: API 36 (Android 16) only, at
-        // the user's request. Modern device baseline; every API in scope
-        // (Compose, SAF, edge-to-edge insets, themed icons) is first-class.
-        minSdk = 36
+        // Android 12 (API 31) and later, from 1.5 — md began at API 36 only.
+        // 31 is the floor the file associations set: the manifest's
+        // `android:pathSuffix` filters (what makes a `.mdown` or `.puml`
+        // open in md at all) exist from API 31. Nothing else in md needs
+        // more: lint at 31 reports no newer API, there is no SDK_INT branch,
+        // every picker is a SAF contract, Back is AndroidX's BackHandler
+        // (classic Back below 33, predictive from 33), `enableEdgeToEdge()`
+        // covers 31–34, and a themed icon's monochrome layer is simply unused
+        // before Android 13.
+        minSdk = 31
         targetSdk = 36
         versionCode = storedVersionCode
         versionName = resolvedVersionName
@@ -97,6 +103,18 @@ android {
     }
 
     buildTypes {
+        // A debug build installs BESIDE the Play copy instead of over it: its
+        // own application id (me.nettrash.md.debug) and its own launcher name,
+        // "md debug" (src/debug/res/values/strings.xml). Without this the two
+        // share an id but not a signing key, so Android refuses to install a
+        // test build on a phone that has md from Google Play — the only way in
+        // was to uninstall the real app and lose its preferences. Release
+        // builds are untouched. Nothing in the code hard-codes the package:
+        // the FileProvider authority is ${applicationId} in the manifest and
+        // context.packageName in Exporter.kt.
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
@@ -149,6 +167,8 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
 }
 
 // ---- IDE compatibility: legacy aggregate test-class tasks --------------
