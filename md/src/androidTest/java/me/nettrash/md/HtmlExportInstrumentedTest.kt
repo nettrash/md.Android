@@ -177,7 +177,18 @@ class HtmlExportInstrumentedTest {
         val richAudit = auditSelfContained(rich, "rich")
         val plainAudit = auditSelfContained(plain, "plain")
 
-        assertEquals(2, richAudit.getInt("svgs"))
+        // Graphviz and Mermaid, one drawing each — but the bundled Mermaid
+        // (11.x) uses class static blocks, which Chromium parses from 94 on.
+        // Android 12 shipped WebView 91, and an emulator image without Play
+        // keeps it for ever: there Mermaid falls back to its source and only
+        // Graphviz draws (the README states the requirement). Every other
+        // assertion here holds on any WebView.
+        val mermaidDraws = webViewMajor() >= 94
+        assertEquals(
+            "SVGs in the rich export (WebView ${webViewMajor()})",
+            if (mermaidDraws) 2 else 1,
+            richAudit.getInt("svgs"),
+        )
         // One inline formula and one display formula, both already expanded
         // into KaTeX markup by the time the page was captured.
         assertEquals(2, richAudit.getInt("katex"))
@@ -197,6 +208,10 @@ class HtmlExportInstrumentedTest {
     }
 
     // ---- helpers -------------------------------------------------------
+
+    /** The installed Android System WebView's major version ("91.0.4472.114" → 91). */
+    private fun webViewMajor(): Int =
+        WebView.getCurrentWebViewPackage()?.versionName?.substringBefore('.')?.toIntOrNull() ?: 0
 
     /** The real export path, run to completion. */
     private fun export(source: String, title: String): ByteArray {
