@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher shortcut for a recent document (#11): the app's paper with a
+     page glyph in its brown, in the 48dp circle launchers expect. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#F4EEE3"
+        android:pathData="M24,0A24,24 0,1 1,24 48A24,24 0,1 1,24 0z" />
+    <path
+        android:fillColor="#2E2118"
+        android:fillType="evenOdd"
+        android:pathData="M17,12h10l6,6v18a2,2 0,0 1,-2 2H17a2,2 0,0 1,-2 -2V14a2,2 0,0 1,2 -2zM26,13.5V19h5.5zM19,24h10v1.6H19zM19,28h10v1.6H19zM19,32h7v1.6h-7z" />
+</vector>

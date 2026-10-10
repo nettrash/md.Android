@@ -84,6 +84,9 @@ sealed interface Replacement {
      *  (see [DocumentViewModel.openIncoming]). */
     data class Incoming(val intent: Intent) : Replacement
 
+    /** A document from Open Recent, reopened with the grant md kept for it. */
+    data class Recent(val uri: Uri) : Replacement
+
     /** Leaving with Back, which replaces the document with nothing at all. */
     data object Exit : Replacement
 }
@@ -195,6 +198,30 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The file as md last read or wrote it (see DiskStamp.kt). */
     private var diskStamp: DiskStamp? = null
+
+    // ---- Open Recent (#11) ---------------------------------------------
+
+    private val recent = RecentDocuments(app)
+
+    /** The documents Open Recent lists, newest first. */
+    var recentDocuments: List<RecentEntry> by mutableStateOf(recent.entries())
+        private set
+
+    /** Reopen a document from Open Recent (after the guard): writable when md
+     *  still holds the write half of the grant. */
+    fun openRecent(target: Uri) = open(target, holdsWriteGrant(target), fromBook = false)
+
+    /** Clear Recent: forget them all and give back every grant but the open
+     *  document's. */
+    fun clearRecent() {
+        recent.clear(open = uri)
+        recentDocuments = recent.entries()
+    }
+
+    private fun rememberRecent(target: Uri, name: String) {
+        recent.record(target, name, open = target)
+        recentDocuments = recent.entries()
+    }
 
     /** The app-private copy and the sibling beside the original that the
      *  current run of failed saves writes to — one of each per run, rewritten
@@ -364,10 +391,26 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         autosave?.cancel()   // a stale save must not chase the old document
         loading?.cancel()
         loading = viewModelScope.launch {
-            val read = withContext(Dispatchers.IO) { read(target) } ?: return@launch
+            val read = withContext(Dispatchers.IO) { read(target) }
+            if (read == null) {
+                // A remembered document that no longer opens leaves the list
+                // (and the launcher) quietly; the writer is told once.
+                val remembered = recentDocuments.firstOrNull { it.uri == target.toString() }
+                if (remembered != null) {
+                    recent.remove(target)
+                    recentDocuments = recent.entries()
+                    android.widget.Toast.makeText(
+                        getApplication(),
+                        "Couldn't open “${remembered.name}”.",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+                return@launch
+            }
             when (read) {
                 is Read.Pack -> importTextPack(read.text, read.name)
                 is Read.Text -> {
+                    if (!fromBook) rememberRecent(target, read.name)
                     forgetFile(read.stamp)
                     text = read.text
                     dressing = read.dressing
@@ -448,6 +491,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         canWrite = true
         isDirty = false
         isBookArticle = false
+        rememberRecent(target, displayName)
         return true
     }
 
