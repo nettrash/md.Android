@@ -202,6 +202,33 @@ class ManifestDocumentTypesTest {
         assertTrue(send.single().pathSuffixes.isEmpty())
     }
 
+    @Test fun theShareFilterTakesTheFilesThePickerOffers() {
+        // From 1.6 a shared FILE opens too (#8). A send has no path to test,
+        // so the filter is MIME-only and its list is exactly the Open…
+        // picker's; the catch-alls are narrowed by name in code.
+        val send = allFilters().single { "android.intent.action.SEND" in it.actions }
+        assertEquals(DocumentTypes.SHAREABLE_MIME_TYPES.toList(), send.mimeTypes)
+        assertTrue(send.hosts.isEmpty())
+    }
+
+    @Test fun aSharedFileIsTakenByTextTypeOrByMdsOwnName() {
+        // Any text type, whatever the name.
+        assertTrue(DocumentTypes.acceptsSharedFile("text/plain", "notes.txt"))
+        assertTrue(DocumentTypes.acceptsSharedFile("text/markdown", null))
+        assertTrue(DocumentTypes.acceptsSharedFile("TEXT/PLAIN; charset=utf-8", "x.bin"))
+        // A catch-all type only with one of md's extensions, any case.
+        for (name in listOf("a.md", "B.MKD", "c.puml", "d.gv", "e.textpack", "f.txt", "g.markdown")) {
+            assertTrue(name, DocumentTypes.acceptsSharedFile("application/octet-stream", name))
+        }
+        assertTrue(DocumentTypes.acceptsSharedFile("application/zip", "Notes.textpack"))
+        assertTrue(DocumentTypes.acceptsSharedFile(null, "Notes.md"))
+        for (name in listOf("photo.jpg", "archive.zip", "noext", "md", ".", "x.dot", null)) {
+            assertTrue("$name", !DocumentTypes.acceptsSharedFile("application/octet-stream", name))
+        }
+        assertTrue(!DocumentTypes.acceptsSharedFile("application/zip", "archive.zip"))
+        assertTrue(!DocumentTypes.acceptsSharedFile(null, null))
+    }
+
     // MARK: The MIME filter
 
     @Test fun markdownMimeFilterStillListsEveryMarkdownType() {

@@ -447,6 +447,16 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  about to replace. */
     fun handOver(intent: Intent) {
         if (!carriesDocument(intent)) return
+        // A shared file md does not open is refused before the guard: the
+        // writer must not answer the unsaved-changes dialog for a photo.
+        if (refusesSharedFile(intent)) {
+            android.widget.Toast.makeText(
+                getApplication(),
+                "md opens Markdown, text, PlantUML, Graphviz and TextPack files.",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
         if (requestReplacement(Replacement.Incoming(intent)) != null) openIncoming(intent)
     }
 
@@ -471,14 +481,45 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                 if (writable) takePersistableGrant(target, intent.flags)
                 load(target, writable = writable)
             }
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { acceptSharedText(it) }
+            Intent.ACTION_SEND -> {
+                val stream = sharedStream(intent)
+                if (stream == null) {
+                    intent.getStringExtra(Intent.EXTRA_TEXT)?.let { acceptSharedText(it) }
+                    return
+                }
+                // A shared file is the same hand-off as Open with md: the
+                // grant decides whether it opens writable (a share usually
+                // grants read only), and load() imports a pack or reads text.
+                if (refusesSharedFile(intent)) return
+                val writable = IncomingGrant.isWritable(
+                    intentFlags = intent.flags,
+                    holdsWriteGrant = holdsWriteGrant(stream),
+                )
+                if (writable) takePersistableGrant(stream, intent.flags)
+                load(stream, writable = writable)
+            }
         }
     }
+
+    /** True for a share whose file md does not open (see
+     *  [DocumentTypes.acceptsSharedFile]); false for anything else. */
+    private fun refusesSharedFile(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_SEND) return false
+        val stream = sharedStream(intent) ?: return false
+        val type = intent.type ?: runCatching { resolver.getType(stream) }.getOrNull()
+        return !DocumentTypes.acceptsSharedFile(type, queryName(stream) ?: stream.lastPathSegment)
+    }
+
+    /** The file an ACTION_SEND carries — EXTRA_STREAM, or the first item of
+     *  its clip, which is where the grant travels — or null for a text share. */
+    private fun sharedStream(intent: Intent): Uri? =
+        androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
 
     /** Whether [intent] actually hands us a document to open. */
     private fun carriesDocument(intent: Intent): Boolean = when (intent.action) {
         Intent.ACTION_VIEW, Intent.ACTION_EDIT -> intent.data != null
-        Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT) != null
+        Intent.ACTION_SEND -> sharedStream(intent) != null || intent.getStringExtra(Intent.EXTRA_TEXT) != null
         else -> false
     }
 

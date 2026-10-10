@@ -64,6 +64,28 @@ object DocumentTypes {
         "application/octet-stream", "application/zip",
     )
 
+    /** What "Share → md" accepts as a file (ACTION_SEND with EXTRA_STREAM):
+     *  the same types the Open… picker offers. A send carries no path for a
+     *  filter to test — Android matches it by MIME type alone — so the two
+     *  catch-all types are checked by name in [acceptsSharedFile]. */
+    val SHAREABLE_MIME_TYPES: Array<String> = OPENABLE_MIME_TYPES
+
+    /**
+     * Whether a file shared to md with [mimeType] and display [name] is one md
+     * opens. A text type is always taken — it is text, whatever it is called.
+     * Anything else (`application/octet-stream`, `application/zip`, a type no
+     * provider should have sent) is taken only when its name carries one of
+     * md's extensions ([ALL], any letter case): a shared photo or archive is
+     * refused rather than opened as Latin-1 mojibake.
+     */
+    fun acceptsSharedFile(mimeType: String?, name: String?): Boolean {
+        val type = mimeType?.lowercase()?.substringBefore(';')?.trim()
+        if (type != null && type.startsWith("text/")) return true
+        val dot = name?.lastIndexOf('.') ?: -1
+        if (name == null || dot < 0) return false
+        return name.substring(dot + 1).lowercase() in ALL
+    }
+
     /** [name] without its document extension, when it carries one of [ALL]
      *  (matched in any letter case — `NOTES.MD` → `NOTES`); unchanged
      *  otherwise. Exactly one extension is stripped, so `Notes.mkd.md` →

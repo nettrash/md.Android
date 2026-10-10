@@ -11,6 +11,15 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
 
 ### Added
 
+- **Share a file to md.** "Share → md" used to take only shared text; it
+  now takes a file too — Markdown in any of its spellings, plain text,
+  PlantUML, Graphviz and TextPack. A shared file opens exactly as one
+  opened with md does: a TextPack is imported, the unsaved-changes question
+  is asked first when it has to be, and the file opens read-only unless
+  the sending app allowed md to write it. A shared file md does not open —
+  a photo, an archive — is turned down with a message, before anything
+  open is touched. (#8)
+
 ### Changed
 
 - **A file is written back the way it came.** md used to save every file as
