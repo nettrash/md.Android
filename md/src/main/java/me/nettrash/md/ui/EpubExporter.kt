@@ -33,7 +33,11 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import android.net.Uri
 import me.nettrash.md.book.BookContent
+import me.nettrash.md.book.CoverReference
+import me.nettrash.md.book.EpubCover
+import me.nettrash.md.book.EpubFrontMatter
 import me.nettrash.md.book.EpubBook
 import me.nettrash.md.book.EpubChapter
 import me.nettrash.md.book.EpubImage
@@ -107,9 +111,9 @@ object EpubExporter {
      *  thread — null when anything failed (an image capture, the zip), so the
      *  caller can toast instead of writing a broken book. The document share
      *  menu's "Export as EPUB…", the lone-document counterpart of [export]. */
-    fun exportDocument(context: Context, source: String, fileName: String, done: (ByteArray?) -> Unit) {
+    fun exportDocument(context: Context, source: String, fileName: String, docUri: Uri?, done: (ByteArray?) -> Unit) {
         scope.launch {
-            done(runCatching { buildDocument(context, source, fileName) }.getOrNull())
+            done(runCatching { buildDocument(context, source, fileName, docUri) }.getOrNull())
         }
     }
 
@@ -125,8 +129,9 @@ object EpubExporter {
      *  because it is the whole of `EpubBook.units`, the OPF names and spines
      *  only it, so there is no title-page cursor to keep in step — the trap the
      *  book path's title page would otherwise spring. */
-    private suspend fun buildDocument(context: Context, source: String, fileName: String): ByteArray? {
-        val title = documentTitle(MarkdownParser.frontMatter(source), fileName)
+    private suspend fun buildDocument(context: Context, source: String, fileName: String, docUri: Uri?): ByteArray? {
+        val fields = MarkdownParser.frontMatter(source)
+        val title = documentTitle(fields, fileName)
         // Parse + render + fix is pure CPU, like prepare(); the outline is the
         // same line scan the Contents menu uses, and its slugs are the ids
         // MarkdownHtml just put on the headings — hence the nav anchors resolve.
@@ -137,9 +142,27 @@ object EpubExporter {
         val images = ArrayList<EpubImage>()
         val unit = resolve(context, prepared, images) ?: return null
         val outline = withContext(Dispatchers.Default) { MarkdownParser.outline(source) }
-        val book = EpubBook(title, titlePage = unit, rootArticles = emptyList(), chapters = emptyList(), images = images)
+        // The front matter's metadata and cover (#12). The cover is read only
+        // through access md already holds; one that cannot be read, or is not
+        // a PNG, JPEG, GIF or WebP, is left out silently.
+        val cover = withContext(Dispatchers.IO) { readCover(context, docUri, EpubFrontMatter.fieldValue(fields, "cover")) }
+        val book = EpubBook(
+            title, titlePage = unit, rootArticles = emptyList(), chapters = emptyList(), images = images,
+            metadata = EpubFrontMatter.metadata(fields), cover = cover,
+        )
         return withContext(Dispatchers.IO) { buildEpub(book, nav = documentNavXhtml(title, outline)) }
     }
+
+    /** The `cover:` image: a `data:` image decoded, an `https:` one fetched
+     *  (redirects by hand, https only, 15 s, 20 MB), or a file beside the
+     *  document ([LocalAssets]). */
+    private fun readCover(context: Context, docUri: Uri?, value: String?): EpubCover? =
+        when (val reference = EpubFrontMatter.coverReference(value)) {
+            null -> null
+            is CoverReference.Data -> EpubFrontMatter.recogniseCover(reference.bytes)
+            is CoverReference.Https -> EpubFrontMatter.recogniseCover(EpubFrontMatter.fetchHttps(reference.url))
+            is CoverReference.Local -> EpubFrontMatter.recogniseCover(LocalAssets.read(context, docUri, reference.path))
+        }
 
     private suspend fun build(context: Context, content: BookContent): ByteArray? {
         val plan = withContext(Dispatchers.Default) { prepare(content) }

@@ -96,7 +96,7 @@ class PlantUmlLargeDiagramInstrumentedTest {
         val latch = CountDownLatch(1)
         var bytes: ByteArray? = null
         instrumentation.runOnMainSync {
-            EpubExporter.exportDocument(instrumentation.targetContext, "# Big\n\n" + sequence(120), "Big.md") {
+            EpubExporter.exportDocument(instrumentation.targetContext, "# Big\n\n" + sequence(120), "Big.md", null) {
                 bytes = it
                 latch.countDown()
             }

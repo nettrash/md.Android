@@ -509,7 +509,7 @@ fun EditorScreen(viewModel: DocumentViewModel) {
         ActivityResultContracts.CreateDocument("application/epub+zip")
     ) { uri ->
         uri?.let { target ->
-            EpubExporter.exportDocument(context, viewModel.text, viewModel.displayName) { bytes ->
+            EpubExporter.exportDocument(context, viewModel.text, viewModel.displayName, viewModel.uri) { bytes ->
                 val written = bytes != null && runCatching {
                     val stream = runCatching { context.contentResolver.openOutputStream(target, "wt") }
                         .getOrNull() ?: context.contentResolver.openOutputStream(target)
