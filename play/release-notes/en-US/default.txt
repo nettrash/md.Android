@@ -1,5 +1,6 @@
-• Find and Replace, from the new search button or Ctrl+F: ignores case, wraps around, no regular expressions.
-• Return continues lists, tasks, quotes and tables, and the first letter of a line or sentence is capitalized as you type. Both switch off.
-• Every Markdown spelling opens (.mkd, .mdown, .mdtxt and the rest), plus .plantuml, .iuml, .pu and .gv.
-• A file handed to md opens for editing; unsaved changes ask first.
-• Hardware keyboard: Ctrl+N/O/S/P, Ctrl+1/2/3 for Edit/Split/Preview.
+• Formatting: Ctrl+B, Ctrl+I, Ctrl+K and more, a Format menu, and a bar above the phone keyboard.
+• Share files to md, and reopen them from Open Recent or a long press on the icon.
+• Files keep their encoding and line endings; a failed save never loses your text.
+• md won't overwrite a file changed elsewhere: Reload or Keep Mine.
+• EPUBs carry author, language, date, series and a cover from front matter.
+• Large PlantUML diagrams render.

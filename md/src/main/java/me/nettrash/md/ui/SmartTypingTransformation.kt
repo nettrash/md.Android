@@ -122,6 +122,43 @@ internal class SmartTypingTransformation(
 }
 
 /**
+ * The field's input pass (#13): typing one of `*` `_` `` ` `` `$` over a
+ * selection wraps it (MarkdownFormatting.wrapTyped, when the setting is on) —
+ * one replacement of the selection, so one undo step — and anything else goes
+ * to [smart] unchanged. A wrap is not handed to SmartTyping: it is not
+ * typing SmartTyping has a rule for, and its §3.4 tracker is told about it
+ * directly, as every programmatic edit tells it.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+internal class EditorInputTransformation(
+    private val settings: TypingSettings,
+    private val override: TypingOverride,
+    private val smart: SmartTypingTransformation,
+) : InputTransformation {
+
+    override fun TextFieldBuffer.transformInput() {
+        if (settings.wrapSelection && changes.changeCount == 1) {
+            val before = changes.getOriginalRange(0)
+            val after = changes.getRange(0)
+            val selection0 = originalSelection
+            if (!selection0.collapsed && before.min == selection0.min && before.max == selection0.max && after.length == 1) {
+                val original = originalText.toString()
+                val typed = asCharSequence().subSequence(after.min, after.max).toString()
+                val wrap = me.nettrash.md.markdown.MarkdownFormatting.wrapTyped(original, selection0.min, selection0.max, typed)
+                if (wrap != null) {
+                    revertAllChanges()
+                    replace(wrap.start, wrap.end, wrap.text)
+                    selection = TextRange(wrap.selectionStart, wrap.selectionEnd)
+                    override.edited(original, wrap.start, wrap.end, wrap.text, selection0.min, selection0.max)
+                    return
+                }
+            }
+        }
+        with(smart) { transformInput() }
+    }
+}
+
+/**
  * The editor's buffer — the `TextFieldState` the text field edits — with its
  * smart-typing hooks. One per screen, created by [rememberEditorBuffer], so
  * switching Edit / Split keeps the caret where it was.
@@ -131,7 +168,27 @@ internal class EditorBuffer(initialText: String, settings: TypingSettings) {
 
     val state = TextFieldState(initialText, TextRange.Zero)
     val override = TypingOverride()
-    val transformation = SmartTypingTransformation(settings, override)
+    val transformation: InputTransformation =
+        EditorInputTransformation(settings, override, SmartTypingTransformation(settings, override))
+
+    /**
+     * A formatting command (#13) as one edit of the field: the change
+     * MarkdownFormatting asks for, applied through `TextFieldState.edit` —
+     * one undo step, never merged with the typing around it — with the
+     * selection it names. Returns false when the command changes nothing.
+     */
+    fun applyFormat(op: me.nettrash.md.markdown.FormatOp): Boolean {
+        val before = state.text.toString()
+        val selection0 = state.selection
+        val edit = me.nettrash.md.markdown.MarkdownFormatting.format(before, selection0.min, selection0.max, op) ?: return false
+        state.edit {
+            replace(edit.start, edit.end, edit.text)
+            selection = TextRange(edit.selectionStart, edit.selectionEnd)
+        }
+        override.edited(before, edit.start, edit.end, edit.text, selection0.min, selection0.max)
+        requestReveal()
+        return true
+    }
 
     /** The `DocumentViewModel.documentToken` whose text [state] holds. */
     var loadedToken: Long = -1L

@@ -463,6 +463,15 @@ internal class TypingSettings(context: Context) {
     var capitalizeSentences: Boolean by mutableStateOf(prefs.getBoolean(CAPITALIZE_SENTENCES_KEY, true))
         private set
 
+    /** Typing `*` `_` `` ` `` `$` over a selection wraps it (#13); on by default. */
+    var wrapSelection: Boolean by mutableStateOf(prefs.getBoolean(WRAP_SELECTION_KEY, true))
+        private set
+
+    fun chooseWrapSelection(on: Boolean) {
+        wrapSelection = on
+        prefs.edit { putBoolean(WRAP_SELECTION_KEY, on) }
+    }
+
     fun chooseContinueLists(on: Boolean) {
         continueLists = on
         prefs.edit { putBoolean(CONTINUE_LISTS_KEY, on) }
@@ -477,6 +486,8 @@ internal class TypingSettings(context: Context) {
         /** The preferences keys, verbatim on every platform (§3.1). */
         const val CONTINUE_LISTS_KEY = "md.continueLists"
         const val CAPITALIZE_SENTENCES_KEY = "md.capitalizeSentences"
+        /** md.win's key for the same setting. */
+        const val WRAP_SELECTION_KEY = "md.wrapSelection"
 
         /** The file: ViewModeStore's. */
         const val PREFS = "view"
