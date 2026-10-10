@@ -140,7 +140,11 @@ object MarkdownParser {
         // Checked: exact. `replace` and `split` here match UTF-16 units, so a
         // mark on the character after a newline cannot hide the newline. The
         // Apple sibling reaches the same line list in one scalar pass.
-        val lines = source
+        // A byte-order mark the codec somehow let through (a string handed in
+        // from elsewhere) would sit in front of the first `#` or `---` and
+        // hide the heading or the front matter. Only at the top of the
+        // document: a quote's inner text never starts with one.
+        val lines = (if (quoteDepth == 0) source.removePrefix("\uFEFF") else source)
             .replace("\r\n", "\n")
             .replace("\r", "\n")
             .split("\n")
@@ -713,7 +717,7 @@ object MarkdownParser {
     /** Source split into terminator-free lines, with line endings normalised
      *  the same way [parse] does — so [outline] / [notes] line numbers match. */
     private fun normalizedLines(source: String): List<String> =
-        source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        source.removePrefix("\uFEFF").replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
     // MARK: - Thematic break
 
