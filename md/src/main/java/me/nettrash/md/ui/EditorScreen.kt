@@ -612,6 +612,10 @@ fun EditorScreen(viewModel: DocumentViewModel) {
      *  in its callback instead. */
     fun saveOrSaveAs(): Boolean {
         if (viewModel.save()) return true
+        // A document with a file of its own whose save did not land — it
+        // changed on disk, or the write failed — is not a Save As: the bar
+        // under the app bar says what happened and offers the way on.
+        if (viewModel.hasWritableFile) return false
         createLauncher.launch(suggestedFileName(viewModel.displayName))
         return false
     }
@@ -1156,6 +1160,18 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                         // there.) Nothing was ever written to the per-file
                         // memory, so there is nothing to restore but this.
                         onClose = { findOpen = false; navigationMode = null },
+                    )
+                }
+                viewModel.notice?.let { notice ->
+                    NoticeBar(
+                        notice = notice,
+                        onReload = { viewModel.reloadFromDisk() },
+                        onKeepMine = { viewModel.keepMine() },
+                        // The system Save dialog; what it returns is adopted
+                        // like any Save As, so the writer carries on in a file
+                        // that can be written.
+                        onSaveCopy = { createLauncher.launch(suggestedFileName(viewModel.displayName)) },
+                        onDismiss = { viewModel.dismissNotice() },
                     )
                 }
             }

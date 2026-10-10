@@ -22,6 +22,20 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
 
 ### Changed
 
+- **Opening a file no longer freezes the app.** The file is read off the
+  main thread, so a large one on a slow or cloud provider opens without
+  stalling the editor. (#10)
+- **md does not overwrite a file that changed while you were editing it.**
+  If another app changes the file under unsaved edits, md stops saving and
+  a bar offers **Reload** (take the file as it is now) or **Keep Mine**
+  (write your version over it). (#10)
+- **A save that fails never loses your text.** It is kept in md's own
+  storage at once, and — for a book article, whose folder md can reach —
+  beside the original as "name (rescued)". A bar says "Couldn't save — your
+  text is kept" and **Save a copy…** opens the system Save dialog; md goes
+  on in the copy. A document whose edits could not be saved is not
+  replaced by New, Open or a shared file until that is settled. (#10)
+
 - **A file is written back the way it came.** md used to save every file as
   UTF-8 with whatever line breaks the editor held; it now keeps the
   encoding it read — UTF-8, UTF-16, Windows-1251 or ISO-8859-1 — and the
