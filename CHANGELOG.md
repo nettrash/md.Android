@@ -33,6 +33,13 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
 
 ### Fixed
 
+- **Large PlantUML diagrams render.** A diagram wider or taller than 4096
+  pixels — a sequence diagram of forty-odd participants is already past it —
+  used to show "Diagram too large for browser rendering" instead of the
+  drawing. The bundled engine's size check is lifted, as it already is in md
+  for VS Code, and an EPUB snapshot of a very tall diagram is taken at a
+  reduced resolution rather than running out of memory. (#9)
+
 - **A Markdown file saved with a UTF-8 byte-order mark opens properly.**
   The mark used to arrive as an invisible character in front of the first
   line, which hid the front matter and the first heading from the preview,

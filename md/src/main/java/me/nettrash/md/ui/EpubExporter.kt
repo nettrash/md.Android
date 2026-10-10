@@ -302,10 +302,14 @@ object EpubExporter {
                 handler.postDelayed({
                     val captures = runCatching {
                         rects.map { (x, y, w, h) ->
-                            val bitmapWidth = ceil(w * density).toInt().coerceAtLeast(1)
-                            val bitmapHeight = ceil(h * density).toInt().coerceAtLeast(1)
+                            val scale = CaptureBudget.scale(w, h, density)
+                            val bitmapWidth = ceil(w * scale).toInt().coerceAtLeast(1)
+                            val bitmapHeight = ceil(h * scale).toInt().coerceAtLeast(1)
                             val bitmap = createBitmap(bitmapWidth, bitmapHeight)
                             Canvas(bitmap).apply {
+                                // The view draws in device px; a capped capture
+                                // shrinks it to the scale it was given.
+                                scale(scale / density, scale / density)
                                 translate(-x * density, -y * density)
                                 view.draw(this)
                             }
