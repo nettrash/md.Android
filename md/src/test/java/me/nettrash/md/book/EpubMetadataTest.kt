@@ -309,4 +309,31 @@ class EpubMetadataTest {
         )
         assertNull(result)
     }
+
+    /** A connection that blocks until it is cut: what a stalled server is. */
+    private class Hanging(url: URL) : HttpURLConnection(url) {
+        val cut = java.util.concurrent.CountDownLatch(1)
+        override fun connect() {}
+        override fun disconnect() { cut.countDown() }
+        override fun usingProxy() = false
+        override fun getResponseCode(): Int {
+            cut.await()
+            throw java.net.SocketException("Socket closed")
+        }
+    }
+
+    /** The total budget holds while a call blocks: the watchdog cuts the
+     *  connection at the deadline (without it this test never returns). */
+    @Test(timeout = 5_000) fun theDeadlineCutsABlockingConnection() {
+        val result = EpubFrontMatter.fetchHttps("https://a.example/cover.png", open = { Hanging(it) }, timeoutMs = 200)
+        assertNull(result)
+    }
+
+    @Test fun aDataCoverPastTheCapIsRefusedBeforeDecoding() {
+        val image = ByteArray(EpubFrontMatter.MAX_COVER_BYTES).also { png.copyInto(it) }
+        val atTheCap = EpubFrontMatter.coverReference("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(image))
+        assertArrayEquals(image, (atTheCap as CoverReference.Data).bytes)
+        val past = image + ByteArray(3)
+        assertNull(EpubFrontMatter.coverReference("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(past)))
+    }
 }

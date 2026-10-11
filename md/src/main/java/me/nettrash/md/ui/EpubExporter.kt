@@ -161,7 +161,9 @@ object EpubExporter {
             null -> null
             is CoverReference.Data -> EpubFrontMatter.recogniseCover(reference.bytes)
             is CoverReference.Https -> EpubFrontMatter.recogniseCover(EpubFrontMatter.fetchHttps(reference.url))
-            is CoverReference.Local -> EpubFrontMatter.recogniseCover(LocalAssets.read(context, docUri, reference.path))
+            is CoverReference.Local -> EpubFrontMatter.recogniseCover(
+                LocalAssets.read(context, docUri, reference.path, limit = EpubFrontMatter.MAX_COVER_BYTES),
+            )
         }
 
     private suspend fun build(context: Context, content: BookContent): ByteArray? {

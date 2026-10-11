@@ -42,7 +42,8 @@ The answers that match this build: **no data collected, no data shared, no
 tracking.** The INTERNET permission is disclosed as above — a request goes
 only to the host named in the user's own document, and only when the
 document contains a remote image (or names an `https:` cover for an EPUB
-export).
+export; that fetch follows at most five redirects, https only, and each
+host on the way sees the device's IP address as the first one does).
 
 ## Wording that must stay accurate
 

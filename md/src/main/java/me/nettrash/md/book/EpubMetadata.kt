@@ -35,6 +35,9 @@ import me.nettrash.md.markdown.MetadataField
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.Base64
 
 /** What a document's front matter adds to its package document. */
@@ -142,8 +145,12 @@ internal object EpubFrontMatter {
             if (comma < 0) return null
             val header = value.substring(5, comma)
             if (header.length < 7 || !startsWithAsciiIgnoringCase(header.substring(header.length - 7), ";base64")) return null
+            val length = value.length - comma - 1
+            // Past the cover cap once decoded: refused before the payload is
+            // copied, matched or decoded.
+            if (length <= 0 || length % 4 != 0 || length / 4 * 3 > MAX_COVER_BYTES + 2) return null
             val payload = value.substring(comma + 1)
-            if (payload.isEmpty() || !BASE64.matches(payload) || payload.length % 4 != 0) return null
+            if (!BASE64.matches(payload)) return null
             return runCatching { CoverReference.Data(Base64.getDecoder().decode(payload)) }.getOrNull()
         }
         if (startsWithAsciiIgnoringCase(value, "https://")) return CoverReference.Https(value)
@@ -193,22 +200,45 @@ internal object EpubFrontMatter {
      * GET [url] and every redirect after it over https only. Redirects are
      * followed by hand, at most [MAX_REDIRECTS], so a `Location` that leaves
      * https is refused before any request is made to it; a relative Location
-     * resolves against the URL that gave it. [FETCH_TIMEOUT_MS] in all, and a
-     * body past [MAX_COVER_BYTES] is not read to the end. Null on any failure.
+     * resolves against the URL that gave it. [FETCH_TIMEOUT_MS] in all — a
+     * watchdog disconnects the connection at the deadline, so no blocking
+     * connect, header wait or read can outlast it — and a body past
+     * [MAX_COVER_BYTES] is not read to the end. Null on any failure.
      * [open] is the connection factory, a seam for the tests.
      */
     fun fetchHttps(
         url: String,
         open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
         now: () -> Long = System::currentTimeMillis,
+        timeoutMs: Long = FETCH_TIMEOUT_MS.toLong(),
+    ): ByteArray? {
+        val watchdog = Executors.newSingleThreadScheduledExecutor { task ->
+            Thread(task, "md-cover-deadline").apply { isDaemon = true }
+        }
+        try {
+            return fetchHttps(url, open, now, timeoutMs, watchdog)
+        } finally {
+            watchdog.shutdownNow()
+        }
+    }
+
+    private fun fetchHttps(
+        url: String,
+        open: (URL) -> HttpURLConnection,
+        now: () -> Long,
+        timeoutMs: Long,
+        watchdog: ScheduledExecutorService,
     ): ByteArray? = runCatching {
-        val deadline = now() + FETCH_TIMEOUT_MS
+        val deadline = now() + timeoutMs
         var current = URL(url)
         for (hop in 0..MAX_REDIRECTS) {
             if (!current.protocol.equals("https", ignoreCase = true)) return null
             val left = (deadline - now()).toInt()
             if (left <= 0) return null
             val connection = open(current)
+            // The timeouts below bound each blocking phase on its own; the
+            // alarm bounds them together, by cutting the connection.
+            val alarm = watchdog.schedule({ connection.disconnect() }, left.toLong(), TimeUnit.MILLISECONDS)
             try {
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = left
@@ -234,6 +264,7 @@ internal object EpubFrontMatter {
                 }
                 return out.toByteArray()
             } finally {
+                alarm.cancel(false)
                 connection.disconnect()
             }
         }
