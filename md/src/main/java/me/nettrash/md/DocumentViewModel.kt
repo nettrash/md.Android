@@ -602,11 +602,17 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     fun handOver(intent: Intent) {
         if (!carriesDocument(intent)) return
         handingOver?.cancel()
+        // A shared file md does not open is refused before the guard: the
+        // writer must not answer the unsaved-changes dialog for a photo. Its
+        // type and name are the provider's to say — IPC, so on IO: a slow
+        // cloud provider must not freeze Share → md. Anything else (a View
+        // or Edit hand-off, shared text) has nothing to ask and goes on now.
+        val stream = if (intent.action == Intent.ACTION_SEND) sharedStream(intent) else null
+        if (stream == null) {
+            offerIncoming(intent)
+            return
+        }
         handingOver = viewModelScope.launch {
-            // A shared file md does not open is refused before the guard: the
-            // writer must not answer the unsaved-changes dialog for a photo.
-            // Its type and name are the provider's to say — IPC, so on IO: a
-            // slow cloud provider must not freeze Share → md.
             if (withContext(Dispatchers.IO) { refusesSharedFile(intent) }) {
                 android.widget.Toast.makeText(
                     getApplication(),
@@ -615,8 +621,12 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                 ).show()
                 return@launch
             }
-            if (requestReplacement(Replacement.Incoming(intent)) != null) openIncoming(intent)
+            offerIncoming(intent)
         }
+    }
+
+    private fun offerIncoming(intent: Intent) {
+        if (requestReplacement(Replacement.Incoming(intent)) != null) openIncoming(intent)
     }
 
     /** Open the document [intent] carries. ACTION_VIEW and ACTION_EDIT are
