@@ -26,31 +26,49 @@ package me.nettrash.md.ui
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 
 internal object LocalAssets {
 
-    /** The bytes of [relativePath] beside [docUri], or null. */
-    fun read(context: Context, docUri: Uri?, relativePath: String): ByteArray? {
+    /** The bytes of [relativePath] beside [docUri], or null — also null when
+     *  there are more than [limit] of them, found out by reading at most one
+     *  byte past it (the EPUB cover's cap), never the whole file. */
+    fun read(context: Context, docUri: Uri?, relativePath: String, limit: Int? = null): ByteArray? {
         val uri = docUri ?: return null
         return when (uri.scheme) {
-            "file" -> readFile(uri, relativePath)
-            "content" -> readFromTree(context, uri, relativePath)
+            "file" -> readFile(uri, relativePath, limit)
+            "content" -> readFromTree(context, uri, relativePath, limit)
             else -> null
         }
     }
 
-    private fun readFile(uri: Uri, relativePath: String): ByteArray? {
+    /** All of [input], or — with a [limit] — null when it holds more than
+     *  [limit] bytes, having read no more than one byte past it. */
+    fun readBounded(input: InputStream, limit: Int?): ByteArray? {
+        if (limit == null) return input.readBytes()
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        while (out.size() <= limit) {
+            val n = input.read(buffer, 0, minOf(buffer.size.toLong(), limit + 1L - out.size()).toInt())
+            if (n < 0) break
+            out.write(buffer, 0, n)
+        }
+        return if (out.size() > limit) null else out.toByteArray()
+    }
+
+    private fun readFile(uri: Uri, relativePath: String, limit: Int?): ByteArray? {
         val folder = File(uri.path ?: return null).parentFile ?: return null
         val base = runCatching { folder.canonicalFile }.getOrNull() ?: return null
         val candidate = runCatching { File(base, relativePath).canonicalFile }.getOrNull() ?: return null
         if (candidate.path != base.path && !candidate.path.startsWith(base.path + File.separator)) return null
-        return candidate.takeIf { it.isFile }?.let { runCatching { it.readBytes() }.getOrNull() }
+        return candidate.takeIf { it.isFile }?.let { runCatching { it.inputStream().use { input -> readBounded(input, limit) } }.getOrNull() }
     }
 
     /** Walk [relativePath] from the folder of a tree-derived [docUri], one
      *  child lookup per name; never above the document's folder. */
-    private fun readFromTree(context: Context, docUri: Uri, relativePath: String): ByteArray? = runCatching {
+    private fun readFromTree(context: Context, docUri: Uri, relativePath: String, limit: Int?): ByteArray? = runCatching {
         val resolver = context.contentResolver
         val treeId = runCatching { DocumentsContract.getTreeDocumentId(docUri) }.getOrNull() ?: return null
         val tree = DocumentsContract.buildTreeDocumentUri(docUri.authority, treeId)
@@ -77,7 +95,7 @@ internal object LocalAssets {
         }
         if (stack.size <= folderDepth || !isFile) return null
         val target = DocumentsContract.buildDocumentUriUsingTree(tree, stack.last())
-        resolver.openInputStream(target)?.use { it.readBytes() }
+        resolver.openInputStream(target)?.use { readBounded(it, limit) }
     }.getOrNull()
 
     /** The child of [parentId] named exactly [name]: its id and whether it is a folder. */

@@ -35,8 +35,10 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -193,6 +195,10 @@ internal class EditorBuffer(initialText: String, settings: TypingSettings) {
     /** The `DocumentViewModel.documentToken` whose text [state] holds. */
     var loadedToken: Long = -1L
 
+    /** True while the model reads in a document to replace this one
+     *  (`DocumentViewModel.isLoading`): the field takes no typing meanwhile. */
+    var readOnly by mutableStateOf(false)
+
     /**
      * Bumped every time the selection was moved (or rewritten) from outside
      * the field and has to be brought on screen — the find bar's Next,
@@ -314,6 +320,7 @@ internal fun rememberEditorBuffer(viewModel: DocumentViewModel, settings: Typing
         editor.replaceDocument(viewModel.text)
         editor.loadedToken = token
     }
+    SideEffect { editor.readOnly = viewModel.isLoading }
     DisposableEffect(editor) {
         onDispose {
             if (viewModel.documentToken == editor.loadedToken) {

@@ -168,4 +168,61 @@ class ClobberRescueInstrumentedTest {
             copy.delete()
         }
     }
+
+    // ---- Copilot review on #17 / #18 / #20 ------------------------------
+
+    @Test fun aFailedFirstSaveAsIsRescuedAndSaysSo() {
+        val vm = onMain { DocumentViewModel(app) }
+        onMain { vm.newDocument(); vm.onTextChange("untitled words\n") }
+        assertTrue(file.setWritable(false))
+        assertFalse(onMain { vm.saveAs(uri) })
+        assertTrue(onMain { vm.notice is DocumentNotice.SaveFailed })
+        assertEquals("untitled words\n", rescued.listFiles().orEmpty().single().readText())
+        assertNull(onMain { vm.uri })
+    }
+
+    @Test fun aReloadThatCannotReadKeepsTheEditsOwed() {
+        val vm = opened()
+        changeOnDisk("theirs\n")
+        onMain { vm.onTextChange("mine\n") }
+        assertTrue(waitUntil(4_000) { vm.notice == DocumentNotice.ChangedOnDisk })
+        assertTrue(file.delete())
+        onMain { vm.reloadFromDisk() }
+        assertTrue(waitUntil { !vm.isLoading })
+        assertEquals("mine\n", onMain { vm.text })
+        assertTrue("the edits are still owed to the file", onMain { vm.isDirty })
+    }
+
+    @Test fun theEditorIsReadOnlyWhileADocumentLoads() {
+        val vm = onMain { DocumentViewModel(app) }
+        assertTrue(onMain { vm.load(uri, writable = true); vm.isLoading })
+        assertTrue(waitUntil { !vm.isLoading && vm.text == "on disk\n" })
+    }
+
+    @Test fun anEditMadeWhileTheNextDocumentLoadsLandsInItsOwnFile() {
+        val next = File.createTempFile("next", ".md", app.cacheDir).apply { writeText("next\n") }
+        try {
+            val vm = opened()
+            onMain {
+                vm.load(Uri.fromFile(next), writable = true)
+                vm.onTextChange("typed while it loaded\n")   // a command, say — the field itself is read-only
+            }
+            assertTrue(waitUntil { vm.text == "next\n" })
+            assertEquals("typed while it loaded\n", file.readText())
+        } finally {
+            next.delete()
+        }
+    }
+
+    @Test fun anEditWithNowhereToGoKeepsTheDocumentInsteadOfTheLoad() {
+        val vm = onMain { DocumentViewModel(app) }
+        onMain {
+            vm.newDocument()
+            vm.load(uri, writable = true)
+            vm.onTextChange("untitled typing\n")
+        }
+        assertTrue(waitUntil { !vm.isLoading })
+        assertEquals("untitled typing\n", onMain { vm.text })
+        assertNull(onMain { vm.uri })
+    }
 }

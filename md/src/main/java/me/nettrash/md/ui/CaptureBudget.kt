@@ -8,6 +8,7 @@
 
 package me.nettrash.md.ui
 
+import kotlin.math.ceil
 import kotlin.math.sqrt
 
 object CaptureBudget {
@@ -27,5 +28,25 @@ object CaptureBudget {
         if (area <= 0.0) return density
         val fit = sqrt(MAX_PIXELS / area).toFloat()
         return minOf(density, fit)
+    }
+
+    /** One element's capture: the scale it is drawn at, and the bitmap it is
+     *  drawn into. */
+    data class Capture(val scale: Float, val width: Int, val height: Int)
+
+    /** The capture for a [cssWidth] × [cssHeight] element: [scale], with the
+     *  bitmap's dimensions rounded up (and at least one pixel) exactly as
+     *  they are allocated — and the scale shrunk until *those* stay within
+     *  [MAX_PIXELS], which the unrounded area alone does not promise. */
+    fun capture(cssWidth: Float, cssHeight: Float, density: Float): Capture {
+        var s = scale(cssWidth, cssHeight, density)
+        repeat(64) {
+            val width = ceil(cssWidth * s).toInt().coerceAtLeast(1)
+            val height = ceil(cssHeight * s).toInt().coerceAtLeast(1)
+            val pixels = width.toLong() * height.toLong()
+            if (pixels <= MAX_PIXELS) return Capture(s, width, height)
+            s *= (sqrt(MAX_PIXELS.toDouble() / pixels) * 0.999).toFloat()
+        }
+        return Capture(s, 1, 1)
     }
 }

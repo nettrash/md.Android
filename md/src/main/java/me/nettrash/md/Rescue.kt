@@ -29,9 +29,10 @@ sealed interface DocumentNotice {
     /** The file changed on disk under unsaved edits: Reload or Keep Mine. */
     data object ChangedOnDisk : DocumentNotice
 
-    /** A save failed and the text was rescued; [besideOriginal] names the
-     *  copy next to the original when there is one. */
-    data class SaveFailed(val besideOriginal: String?) : DocumentNotice
+    /** A save failed; [besideOriginal] names the copy next to the original
+     *  when there is one, and [keptPrivately] says whether md's own copy
+     *  could be written. With neither, only the buffer holds the text. */
+    data class SaveFailed(val besideOriginal: String?, val keptPrivately: Boolean = true) : DocumentNotice
 }
 
 object Rescue {
