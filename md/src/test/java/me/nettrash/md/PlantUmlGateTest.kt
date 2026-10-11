@@ -65,8 +65,26 @@ class PlantUmlGateTest {
         // 400 × 20 000 CSS px would be 1050 × 52 500 device px — 55 Mpx.
         val scale = CaptureBudget.scale(400f, 20_000f, density)
         assertTrue(scale < density)
-        val pixels = (400f * scale).toLong() * (20_000f * scale).toLong()
+        val size = CaptureBudget.capture(400f, 20_000f, density)
+        // What EpubExporter allocates: the rounded-up dimensions.
+        val pixels = size.width.toLong() * size.height.toLong()
         assertTrue("$pixels px", pixels <= CaptureBudget.MAX_PIXELS)
         assertTrue("not needlessly small", pixels > CaptureBudget.MAX_PIXELS * 9 / 10)
+        assertEquals(kotlin.math.ceil(400f * size.scale).toInt(), size.width)
+        assertEquals(kotlin.math.ceil(20_000f * size.scale).toInt(), size.height)
+    }
+
+    /** The rounding Copilot caught: 400 × 20 000 at the continuous scale is
+     *  580 × 28 964 once rounded up — 16 799 120 px, past the cap. And a
+     *  hair-thin element whose width rounds up to one pixel still fits. */
+    @Test fun theRoundedBitmapStaysWithinTheBudget() {
+        val continuous = CaptureBudget.scale(400f, 20_000f, 2.625f)
+        val naive = kotlin.math.ceil(400f * continuous).toLong() * kotlin.math.ceil(20_000f * continuous).toLong()
+        assertTrue("the old rounding passed the cap: $naive", naive > CaptureBudget.MAX_PIXELS)
+        for ((w, h) in listOf(400f to 20_000f, 0.3f to 9_000_000f, 1f to 50_000_000f, 595f to 120_000f, 2000f to 2000f)) {
+            val size = CaptureBudget.capture(w, h, 2.625f)
+            assertTrue("$w × $h → ${size.width} × ${size.height}",
+                size.width.toLong() * size.height.toLong() <= CaptureBudget.MAX_PIXELS)
+        }
     }
 }

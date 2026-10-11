@@ -112,9 +112,10 @@ object TextCodec {
             TextDressing(decoded.encoding, LineEndings.detect(decoded.text))
     }
 
-    /** The bytes for LF [text] in [dressing]: its line breaks restored and its encoding, or UTF-8 when that cannot hold the text. Never a BOM for UTF-8. */
+    /** The bytes for [text] in [dressing]: its line breaks restored and its encoding, or UTF-8 when that cannot hold the text. Never a BOM for UTF-8.
+     *  The text is normalised to LF first: the editor keeps what a paste brought in, and a pasted CRLF must not become CR CR LF in a CRLF file, nor stay CRLF in an LF one. */
     fun dress(text: String, dressing: TextDressing): EncodedText =
-        encode(LineEndings.apply(text, dressing.newLine), dressing.encoding)
+        encode(LineEndings.apply(LineEndings.normalize(text), dressing.newLine), dressing.encoding)
 
     /** Encode in [preferred], upgrading to UTF-8 when the text does not fit. UTF-16 is written little-endian with a BOM. */
     fun encode(text: String, preferred: TextEncoding): EncodedText = when (preferred) {

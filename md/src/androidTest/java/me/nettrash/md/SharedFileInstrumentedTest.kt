@@ -112,6 +112,8 @@ class SharedFileInstrumentedTest {
         assertTrue(onMain { vm.needsDiscardPrompt })
         val photo = file("photo.jpg", byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))
         onMain { vm.handOver(send(photo, "application/octet-stream")) }
+        // The refusal is decided on IO; give it the time it takes to answer.
+        Thread.sleep(500)
         assertFalse("no dialog for a refused file", onMain { vm.isPromptingDiscard })
         assertEquals("unsaved words", onMain { vm.text })
     }
