@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -230,6 +231,14 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     /** The documents Open Recent lists, newest first. */
     var recentDocuments: List<RecentEntry> by mutableStateOf(recent.entries())
         private set
+
+    init {
+        // A grant Clear Recent could not give back because its document was
+        // open is given back once another document replaces it.
+        viewModelScope.launch {
+            snapshotFlow { documentToken }.collect { recent.releaseDeferred(open = uri) }
+        }
+    }
 
     /** Reopen a document from Open Recent (after the guard): writable when md
      *  still holds the write half of the grant. */
@@ -679,10 +688,11 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  file manager sends VIEW with a write grant, and both actions are
      *  claimed by the same filters). ACTION_SEND text opens untitled.
      *
-     *  A writable hand-off also asks for a persistable grant, so the same
-     *  document is still writable the next time it arrives — wrapped, because
-     *  plenty of providers refuse, and a refusal only costs us the grant we
-     *  already have for this launch. */
+     *  A hand-off also asks for whatever persistable grant it offers, so the
+     *  same document is still writable the next time it arrives — and, read
+     *  only, can still be listed in Open Recent — wrapped, because plenty of
+     *  providers refuse, and a refusal only costs us the grant we already
+     *  have for this launch. */
     fun openIncoming(intent: Intent) {
         when (intent.action) {
             Intent.ACTION_VIEW, Intent.ACTION_EDIT -> {
@@ -691,7 +701,9 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                     intentFlags = intent.flags,
                     holdsWriteGrant = holdsWriteGrant(target),
                 )
-                if (writable) takePersistableGrant(target, intent.flags)
+                // Read-only too: a persistable read grant is what lets a
+                // read-only hand-off appear in Open Recent.
+                takePersistableGrant(target, intent.flags)
                 load(target, writable = writable)
             }
             Intent.ACTION_SEND -> {
@@ -708,7 +720,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                     intentFlags = intent.flags,
                     holdsWriteGrant = holdsWriteGrant(stream),
                 )
-                if (writable) takePersistableGrant(stream, intent.flags)
+                takePersistableGrant(stream, intent.flags)
                 load(stream, writable = writable)
             }
         }

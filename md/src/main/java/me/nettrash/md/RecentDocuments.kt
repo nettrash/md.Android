@@ -119,6 +119,8 @@ class RecentDocuments(private val context: Context) {
         if (uri !in heldGrants()) return
         val (list, evicted) = RecentList.record(entries(), RecentEntry(uri.toString(), name))
         save(list)
+        // Remembered again: a release Clear Recent deferred is called off.
+        deferred = deferred - uri.toString()
         evicted.forEach { release(Uri.parse(it.uri), open) }
     }
 
@@ -128,12 +130,31 @@ class RecentDocuments(private val context: Context) {
         save(list)
     }
 
-    /** Forget every document but give back only the grants of those not [open]. */
+    /** Forget every document and give back their grants — the [open] one's
+     *  once it is no longer open (see [releaseDeferred]). */
     fun clear(open: Uri?) {
         val list = entries()
         save(emptyList())
         list.forEach { release(Uri.parse(it.uri), open) }
     }
+
+    /** Give back the grants whose release had to wait because their document
+     *  was open — now that it is not ([open] is the document on screen), and
+     *  unless it has been remembered again since. Called on every document
+     *  change. */
+    fun releaseDeferred(open: Uri?) {
+        val waiting = deferred
+        if (waiting.isEmpty()) return
+        val listed = RecentList.decode(prefs.getString(KEY, null)).map { it.uri }.toSet()
+        val stillOpen = waiting.filter { it == open?.toString() }.toSet()
+        deferred = stillOpen
+        (waiting - stillOpen - listed).forEach { release(Uri.parse(it), open) }
+    }
+
+    /** URIs whose grant is to be given back once their document is closed. */
+    private var deferred: Set<String>
+        get() = prefs.getStringSet(DEFERRED, null)?.toSet().orEmpty()
+        set(value) { prefs.edit().putStringSet(DEFERRED, value).apply() }
 
     private fun save(list: List<RecentEntry>) {
         prefs.edit().putString(KEY, RecentList.encode(list)).apply()
@@ -145,7 +166,11 @@ class RecentDocuments(private val context: Context) {
     }.getOrDefault(emptySet())
 
     private fun release(uri: Uri, open: Uri?) {
-        if (uri == open) return
+        if (uri == open) {
+            // Still on screen: given back when it is replaced, not forgotten.
+            deferred = deferred + uri.toString()
+            return
+        }
         val grant = runCatching { resolver.persistedUriPermissions.firstOrNull { it.uri == uri } }.getOrNull() ?: return
         val modes = (if (grant.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
             (if (grant.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
@@ -176,5 +201,6 @@ class RecentDocuments(private val context: Context) {
 
     private companion object {
         const val KEY = "entries"
+        const val DEFERRED = "deferred_releases"
     }
 }
