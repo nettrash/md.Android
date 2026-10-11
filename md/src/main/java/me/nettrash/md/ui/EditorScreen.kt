@@ -1487,6 +1487,8 @@ private fun EditorPane(editor: EditorBuffer, scrollSync: ScrollSync?, modifier: 
             // items, quotes and headings start the same way on every port.
             BasicTextField(
                 state = editor.state,
+                // Read-only while a document is read in to replace this one.
+                readOnly = editor.readOnly,
                 modifier = Modifier
                     .fillMaxWidth()
                     .defaultMinSize(minHeight = viewportHeight)
