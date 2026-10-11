@@ -202,4 +202,11 @@ class TextCodecTest {
         assertEquals(TextDressing(TextEncoding.UTF8, NewLine.LF), TextDressing.DEFAULT)
         assertArrayEquals("é\n".toByteArray(), TextCodec.dress("é\n", TextDressing.DEFAULT).data)
     }
+
+    @Test
+    fun aPastedBreakTakesTheFilesLineEnding() {
+        val crlf = TextDressing(TextEncoding.UTF8, NewLine.CRLF)
+        assertArrayEquals("a\r\nb\r\nc\r\nd".toByteArray(), TextCodec.dress("a\nb\r\nc\rd", crlf).data)
+        assertArrayEquals("a\nb\nc\nd".toByteArray(), TextCodec.dress("a\nb\r\nc\rd", TextDressing.DEFAULT).data)
+    }
 }
