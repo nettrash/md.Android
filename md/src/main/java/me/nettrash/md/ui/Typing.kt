@@ -321,6 +321,21 @@ internal class TypingOverride {
     }
 
     /**
+     * A formatting command's edit (Bold, a heading, the typed wrap), tracked
+     * like any other — except that it is not the writer deleting the capital
+     * md just made. Wrapping `Word` as `**Word**` takes the capital along,
+     * which [edited] reads as its removal and arms the override where the
+     * word began, so the next word typed there would skip the sentence rule.
+     * An override this edit armed is dropped; one already armed, or a capital
+     * the edit merely moves, is left as it was.
+     */
+    fun formatted(text: CharSequence, start: Int, end: Int, inserted: String, selectionStart: Int, selectionEnd: Int) {
+        val wasArmed = isArmed
+        edited(text, start, end, inserted, selectionStart, selectionEnd)
+        if (!wasArmed && isArmed) clear()
+    }
+
+    /**
      * A whole change set, every range in the coordinates of [text], the text
      * before it. Walked last to first, so each change is applied while the
      * ones before it — which alone can move `p` and `q` — are still pending.

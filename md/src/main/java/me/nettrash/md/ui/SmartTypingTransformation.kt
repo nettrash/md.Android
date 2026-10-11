@@ -143,7 +143,11 @@ internal class EditorInputTransformation(
             val before = changes.getOriginalRange(0)
             val after = changes.getRange(0)
             val selection0 = originalSelection
-            if (!selection0.collapsed && before.min == selection0.min && before.max == selection0.max && after.length == 1) {
+            if (!selection0.collapsed && before.min == selection0.min && before.max == selection0.max && after.length == 1 &&
+                asCharSequence()[after.min] in me.nettrash.md.markdown.MarkdownFormatting.WRAPPING
+            ) {
+                // Only now, with a wrapping character typed over a selection,
+                // is the text copied.
                 val original = originalText.toString()
                 val typed = asCharSequence().subSequence(after.min, after.max).toString()
                 val wrap = me.nettrash.md.markdown.MarkdownFormatting.wrapTyped(original, selection0.min, selection0.max, typed)
@@ -151,7 +155,7 @@ internal class EditorInputTransformation(
                     revertAllChanges()
                     replace(wrap.start, wrap.end, wrap.text)
                     selection = TextRange(wrap.selectionStart, wrap.selectionEnd)
-                    override.edited(original, wrap.start, wrap.end, wrap.text, selection0.min, selection0.max)
+                    override.formatted(original, wrap.start, wrap.end, wrap.text, selection0.min, selection0.max)
                     return
                 }
             }
@@ -187,7 +191,7 @@ internal class EditorBuffer(initialText: String, settings: TypingSettings) {
             replace(edit.start, edit.end, edit.text)
             selection = TextRange(edit.selectionStart, edit.selectionEnd)
         }
-        override.edited(before, edit.start, edit.end, edit.text, selection0.min, selection0.max)
+        override.formatted(before, edit.start, edit.end, edit.text, selection0.min, selection0.max)
         requestReveal()
         return true
     }
