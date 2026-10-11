@@ -45,9 +45,11 @@ fun NoticeBar(
         Text(
             when (notice) {
                 DocumentNotice.ChangedOnDisk -> "This file changed on disk since md opened it."
-                is DocumentNotice.SaveFailed -> notice.besideOriginal
-                    ?.let { "Couldn't save — your text is kept, also as “$it”." }
-                    ?: "Couldn't save — your text is kept."
+                is DocumentNotice.SaveFailed -> when {
+                    notice.besideOriginal != null -> "Couldn't save — your text is kept, also as “${notice.besideOriginal}”."
+                    notice.keptPrivately -> "Couldn't save — your text is kept."
+                    else -> "Couldn't save, and no copy could be kept. Save a copy before you leave this document."
+                }
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSecondaryContainer,

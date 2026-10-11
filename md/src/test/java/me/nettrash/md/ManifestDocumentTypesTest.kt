@@ -229,6 +229,21 @@ class ManifestDocumentTypesTest {
         assertTrue(!DocumentTypes.acceptsSharedFile(null, null))
     }
 
+    /** Kotlin's `lowercase()` is `Locale.ROOT`: under a Turkish default locale
+     *  an `I` still folds to `i`, not to the dotless `ı`. */
+    @Test fun aSharedFilesCaseFoldsTheSameUnderATurkishLocale() {
+        val saved = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"))
+            assertEquals("ıuml", "IUML".lowercase(java.util.Locale.getDefault()))   // the trap, for the record
+            assertTrue(DocumentTypes.acceptsSharedFile("application/octet-stream", "DIAGRAM.IUML"))
+            assertTrue(DocumentTypes.acceptsSharedFile("TEXT/PLAIN", "x.bin"))
+            assertTrue(DocumentTypes.acceptsSharedFile("application/octet-stream", "LIST.MKD"))
+        } finally {
+            java.util.Locale.setDefault(saved)
+        }
+    }
+
     // MARK: The MIME filter
 
     @Test fun markdownMimeFilterStillListsEveryMarkdownType() {

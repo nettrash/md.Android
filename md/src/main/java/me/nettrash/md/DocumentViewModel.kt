@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -189,6 +190,30 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  document that lands is the one asked for last. */
     private var loading: Job? = null
 
+    /** True while a document is being read in to replace this one: the
+     *  editor is read-only meanwhile, so nothing is typed into a buffer the
+     *  read is about to replace. */
+    var isLoading by mutableStateOf(false)
+        private set
+
+    /** Counts the edits made to the buffer: an open compares it across its
+     *  read, and edits that reached the old document anyway (a formatting
+     *  command) are landed — or the open given up — rather than overwritten. */
+    private var editRevision = 0L
+
+    /** The hand-off being looked at, if any: a later one replaces it. */
+    private var handingOver: Job? = null
+
+    /** Every write to a document goes through this lock, so a write on Main
+     *  (a flush, Save, Keep Mine) never runs beside an autosave still
+     *  writing on IO. */
+    private val writeLock = Any()
+
+    /** The file as md's own last write left it — so a write landing after
+     *  another of md's own (an autosave finishing under a flush) is not taken
+     *  for a change made on disk by someone else. Written under [writeLock]. */
+    private var ownWrite: Pair<Uri, DiskStamp?>? = null
+
     // ---- The file on disk ----------------------------------------------
 
     /** Something the editor has to say about the file, shown as a bar under
@@ -206,6 +231,14 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     /** The documents Open Recent lists, newest first. */
     var recentDocuments: List<RecentEntry> by mutableStateOf(recent.entries())
         private set
+
+    init {
+        // A grant Clear Recent could not give back because its document was
+        // open is given back once another document replaces it.
+        viewModelScope.launch {
+            snapshotFlow { documentToken }.collect { recent.releaseDeferred(open = uri) }
+        }
+    }
 
     /** Reopen a document from Open Recent (after the guard): writable when md
      *  still holds the write half of the grant. */
@@ -239,6 +272,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         if (new != text) {
             text = new
             isDirty = true
+            editRevision++
             scheduleAutosave()
         }
     }
@@ -267,9 +301,12 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
             val snapshot = text
             val dressed = dressing
             val expected = diskStamp
+            // Everything a rescue needs is read here, on Main: the write runs
+            // on IO, and the document may be replaced before it lands.
+            val place = rescuePlace()
             val result = withContext(Dispatchers.IO) {
                 writeTo(target, snapshot, dressed, expected, force = false).let { written ->
-                    if (written.outcome == WriteOutcome.FAILED) written.copy(rescued = rescue(snapshot, dressed)) else written
+                    if (written.outcome == WriteOutcome.FAILED) written.copy(rescued = rescue(snapshot, dressed, place)) else written
                 }
             }
             // The document may have been replaced while the write was out.
@@ -306,7 +343,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         if (notice == DocumentNotice.ChangedOnDisk) return false
         val dressed = dressing
         var result = writeTo(target, text, dressed, diskStamp, force = false)
-        if (result.outcome == WriteOutcome.FAILED) result = result.copy(rescued = rescue(text, dressed))
+        if (result.outcome == WriteOutcome.FAILED) result = result.copy(rescued = rescue(text, dressed, rescuePlace()))
         land(result, dressed)
         if (result.outcome != WriteOutcome.WRITTEN) {
             autosave?.cancel()
@@ -386,11 +423,15 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  the open from per-file view-mode memory (see [isBookArticle]). */
     fun loadAsync(target: Uri, writable: Boolean, fromBook: Boolean = false) = open(target, writable, fromBook)
 
-    private fun open(target: Uri, writable: Boolean, fromBook: Boolean) {
-        if (!flushPendingAutosave()) return   // the beat the autosave still owes lands first
+    private fun open(target: Uri, writable: Boolean, fromBook: Boolean, discardingEdits: Boolean = false) {
+        // The beat the autosave still owes lands first — unless the writer
+        // is giving the edits up (Reload).
+        if (!discardingEdits && !flushPendingAutosave()) return
         autosave?.cancel()   // a stale save must not chase the old document
         loading?.cancel()
-        loading = viewModelScope.launch {
+        val revision = editRevision
+        isLoading = true
+        val job = viewModelScope.launch {
             val read = withContext(Dispatchers.IO) { read(target) }
             if (read == null) {
                 // A remembered document that no longer opens leaves the list
@@ -407,6 +448,13 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 return@launch
             }
+            // An edit that reached the old document while the read was out
+            // (the editor is read-only, but a command can still edit it) is
+            // landed like the open's own flush — or, when it cannot be, the
+            // open is given up and the edit kept.
+            if (!discardingEdits && editRevision != revision &&
+                (needsDiscardPrompt || !flushPendingAutosave())
+            ) return@launch
             when (read) {
                 is Read.Pack -> importTextPack(read.text, read.name)
                 is Read.Text -> {
@@ -423,11 +471,17 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        loading = job
+        job.invokeOnCompletion { if (loading === job) isLoading = false }
     }
 
     /** Read [target] off the main thread: a pack's text, or the file's text
      *  with its dressing, name and stamp; null when it cannot be read. */
     private fun read(target: Uri): Read? {
+        // The stamp is taken BEFORE the bytes: a rewrite that lands while
+        // they are read then differs from it, and the next save asks rather
+        // than writing over a change the buffer never saw.
+        val stamp = stampOf(target)
         val bytes = runCatching {
             resolver.openInputStream(target)?.use { it.readBytes() }
         }.getOrNull() ?: return null
@@ -436,7 +490,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
             return TextBundle.textFromPack(bytes)?.let { Read.Pack(it, name) }
         }
         val (decoded, dressed) = TextCodec.undress(bytes)
-        return Read.Text(decoded, dressed, name, stampOf(target))
+        return Read.Text(decoded, dressed, name, stamp)
     }
 
     /** Adopt a `.textpack`'s `text.md` as the editable buffer — read-only.
@@ -483,7 +537,13 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     fun saveAs(target: Uri): Boolean {
         val dressed = dressing
         val result = writeTo(target, text, dressed, expected = null, force = true)
-        if (result.outcome != WriteOutcome.WRITTEN) return false
+        if (result.outcome != WriteOutcome.WRITTEN) {
+            // A Save As that fails is a failed write like any other: the text
+            // is kept at once and the bar says so — an untitled, imported or
+            // read-only document has nowhere else it could be.
+            land(result.copy(rescued = rescue(text, dressed, rescuePlace())), dressed)
+            return false
+        }
         forgetFile(result.stamp)
         rememberEncoding(dressed, result.encoding!!)
         uri = target
@@ -505,7 +565,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         if (notice == DocumentNotice.ChangedOnDisk) return false
         val dressed = dressing
         var result = writeTo(target, text, dressed, diskStamp, force = false)
-        if (result.outcome == WriteOutcome.FAILED) result = result.copy(rescued = rescue(text, dressed))
+        if (result.outcome == WriteOutcome.FAILED) result = result.copy(rescued = rescue(text, dressed, rescuePlace()))
         land(result, dressed)
         if (result.outcome != WriteOutcome.WRITTEN) return false
         isDirty = false
@@ -523,7 +583,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         val target = uri ?: return
         val dressed = dressing
         var result = writeTo(target, text, dressed, expected = null, force = true)
-        if (result.outcome == WriteOutcome.FAILED) result = result.copy(rescued = rescue(text, dressed))
+        if (result.outcome == WriteOutcome.FAILED) result = result.copy(rescued = rescue(text, dressed, rescuePlace()))
         if (result.outcome == WriteOutcome.WRITTEN) notice = null
         land(result, dressed)
         if (result.outcome == WriteOutcome.WRITTEN) isDirty = false
@@ -533,9 +593,11 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  buffer, the edits given up — the writer asked for exactly that. */
     fun reloadFromDisk() {
         val target = uri ?: return
-        isDirty = false   // nothing to flush: the edits are being let go
+        // The edits are being let go, so nothing is flushed — but the buffer
+        // stays dirty until the read lands: a read that fails leaves the
+        // edits in place and still owed to the file.
         autosave?.cancel()
-        open(target, canWrite, isBookArticle)
+        open(target, canWrite, isBookArticle, discardingEdits = true)
     }
 
     /** The rescue bar was dismissed. The copies stay where they are. */
@@ -592,16 +654,31 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  about to replace. */
     fun handOver(intent: Intent) {
         if (!carriesDocument(intent)) return
+        handingOver?.cancel()
         // A shared file md does not open is refused before the guard: the
-        // writer must not answer the unsaved-changes dialog for a photo.
-        if (refusesSharedFile(intent)) {
-            android.widget.Toast.makeText(
-                getApplication(),
-                "md opens Markdown, text, PlantUML, Graphviz and TextPack files.",
-                android.widget.Toast.LENGTH_LONG,
-            ).show()
+        // writer must not answer the unsaved-changes dialog for a photo. Its
+        // type and name are the provider's to say — IPC, so on IO: a slow
+        // cloud provider must not freeze Share → md. Anything else (a View
+        // or Edit hand-off, shared text) has nothing to ask and goes on now.
+        val stream = if (intent.action == Intent.ACTION_SEND) sharedStream(intent) else null
+        if (stream == null) {
+            offerIncoming(intent)
             return
         }
+        handingOver = viewModelScope.launch {
+            if (withContext(Dispatchers.IO) { refusesSharedFile(intent) }) {
+                android.widget.Toast.makeText(
+                    getApplication(),
+                    "md opens Markdown, text, PlantUML, Graphviz and TextPack files.",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+                return@launch
+            }
+            offerIncoming(intent)
+        }
+    }
+
+    private fun offerIncoming(intent: Intent) {
         if (requestReplacement(Replacement.Incoming(intent)) != null) openIncoming(intent)
     }
 
@@ -611,10 +688,11 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  file manager sends VIEW with a write grant, and both actions are
      *  claimed by the same filters). ACTION_SEND text opens untitled.
      *
-     *  A writable hand-off also asks for a persistable grant, so the same
-     *  document is still writable the next time it arrives — wrapped, because
-     *  plenty of providers refuse, and a refusal only costs us the grant we
-     *  already have for this launch. */
+     *  A hand-off also asks for whatever persistable grant it offers, so the
+     *  same document is still writable the next time it arrives — and, read
+     *  only, can still be listed in Open Recent — wrapped, because plenty of
+     *  providers refuse, and a refusal only costs us the grant we already
+     *  have for this launch. */
     fun openIncoming(intent: Intent) {
         when (intent.action) {
             Intent.ACTION_VIEW, Intent.ACTION_EDIT -> {
@@ -623,7 +701,9 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                     intentFlags = intent.flags,
                     holdsWriteGrant = holdsWriteGrant(target),
                 )
-                if (writable) takePersistableGrant(target, intent.flags)
+                // Read-only too: a persistable read grant is what lets a
+                // read-only hand-off appear in Open Recent.
+                takePersistableGrant(target, intent.flags)
                 load(target, writable = writable)
             }
             Intent.ACTION_SEND -> {
@@ -635,12 +715,12 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                 // A shared file is the same hand-off as Open with md: the
                 // grant decides whether it opens writable (a share usually
                 // grants read only), and load() imports a pack or reads text.
-                if (refusesSharedFile(intent)) return
+                // (handOver has already refused a file md does not open.)
                 val writable = IncomingGrant.isWritable(
                     intentFlags = intent.flags,
                     holdsWriteGrant = holdsWriteGrant(stream),
                 )
-                if (writable) takePersistableGrant(stream, intent.flags)
+                takePersistableGrant(stream, intent.flags)
                 load(stream, writable = writable)
             }
         }
@@ -692,22 +772,33 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         val outcome: WriteOutcome,
         val encoding: TextEncoding? = null,
         val stamp: DiskStamp? = null,
-        val rescued: String? = null,
+        val rescued: Rescued? = null,
     )
 
     /** Write [snapshot] to [target] in [dressed] — unless the file moved from
      *  [expected] since md last saw it ([force] skips that check). Safe to call
      *  on any thread: it touches no Compose state. */
-    private fun writeTo(target: Uri, snapshot: String, dressed: TextDressing, expected: DiskStamp?, force: Boolean): WriteResult {
-        if (!force && DiskStamp.changed(expected, stampOf(target))) return WriteResult(WriteOutcome.CONFLICT)
-        return runCatching {
-            val encoded = TextCodec.dress(snapshot, dressed)
-            // "wt" = write + truncate, so a shorter edit doesn't leave a tail.
-            resolver.openOutputStream(target, "wt")?.use { it.write(encoded.data) }
-                ?: return WriteResult(WriteOutcome.FAILED)
-            WriteResult(WriteOutcome.WRITTEN, encoded.encoding, stampOf(target))
-        }.getOrElse { WriteResult(WriteOutcome.FAILED) }
-    }
+    private fun writeTo(target: Uri, snapshot: String, dressed: TextDressing, expected: DiskStamp?, force: Boolean): WriteResult =
+        synchronized(writeLock) {
+            if (!force) {
+                val current = stampOf(target)
+                // What md's own last write left is not a change on disk, even
+                // when that write has not landed in [diskStamp] yet.
+                val own = ownWrite?.takeIf { it.first == target }
+                if (DiskStamp.changed(expected, current) && (own == null || DiskStamp.changed(own.second, current))) {
+                    return@synchronized WriteResult(WriteOutcome.CONFLICT)
+                }
+            }
+            runCatching {
+                val encoded = TextCodec.dress(snapshot, dressed)
+                // "wt" = write + truncate, so a shorter edit doesn't leave a tail.
+                resolver.openOutputStream(target, "wt")?.use { it.write(encoded.data) }
+                    ?: return@synchronized WriteResult(WriteOutcome.FAILED)
+                val stamp = stampOf(target)
+                ownWrite = target to stamp
+                WriteResult(WriteOutcome.WRITTEN, encoded.encoding, stamp)
+            }.getOrElse { WriteResult(WriteOutcome.FAILED) }
+        }
 
     /** Apply a write's result to the model, on Main. */
     private fun land(result: WriteResult, dressed: TextDressing) {
@@ -721,7 +812,17 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                 rescueSibling = null
             }
             WriteOutcome.CONFLICT -> notice = DocumentNotice.ChangedOnDisk
-            WriteOutcome.FAILED -> notice = DocumentNotice.SaveFailed(besideOriginal = result.rescued)
+            WriteOutcome.FAILED -> {
+                val rescued = result.rescued
+                if (rescued != null) {
+                    rescued.file?.let { rescueFile = it }
+                    rescued.sibling?.let { rescueSibling = it }
+                }
+                notice = DocumentNotice.SaveFailed(
+                    besideOriginal = rescued?.siblingName,
+                    keptPrivately = rescued?.keptPrivately ?: false,
+                )
+            }
         }
     }
 
@@ -759,26 +860,43 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      * name, or null when there is none. One copy of each per run of failures,
      * rewritten as later saves fail too. Safe on any thread.
      */
-    private fun rescue(snapshot: String, dressed: TextDressing): String? {
+    private fun rescue(snapshot: String, dressed: TextDressing, place: RescuePlace): Rescued {
         val bytes = TextCodec.dress(snapshot, dressed).data
         val dir = java.io.File(getApplication<Application>().filesDir, RESCUE_DIRECTORY)
-        runCatching {
-            dir.mkdirs()
-            val file = rescueFile ?: java.io.File(dir, Rescue.fileName(displayName, System.currentTimeMillis())).also { rescueFile = it }
+        val file = place.file ?: java.io.File(dir, Rescue.fileName(place.displayName, System.currentTimeMillis()))
+        val keptPrivately = runCatching {
+            if (!dir.isDirectory && !dir.mkdirs()) error("no rescue directory")
             file.writeBytes(bytes)
             Rescue.prune(dir)
-        }
-        val sibling = rescueSibling ?: createRescueSibling()?.also { rescueSibling = it } ?: return null
+        }.isSuccess
+        val sibling = place.sibling ?: createRescueSibling(place.uri, place.displayName)
+            ?: return Rescued(file.takeIf { keptPrivately }, null, null, keptPrivately)
         val written = runCatching {
             resolver.openOutputStream(sibling, "wt")?.use { it.write(bytes) } != null
         }.getOrDefault(false)
-        return if (written) queryName(sibling) ?: Rescue.siblingName(displayName) else null
+        return Rescued(
+            file.takeIf { keptPrivately },
+            sibling,
+            if (written) queryName(sibling) ?: Rescue.siblingName(place.displayName) else null,
+            keptPrivately,
+        )
     }
+
+    /** Where a rescue of the open document goes — read on Main, so the
+     *  rescue itself touches no model state and may run on IO. */
+    private class RescuePlace(val displayName: String, val uri: Uri?, val file: java.io.File?, val sibling: Uri?)
+
+    private fun rescuePlace() = RescuePlace(displayName, uri, rescueFile, rescueSibling)
+
+    /** What a rescue kept: the private copy (when it could be written), the
+     *  sibling and its name (when there is one and it was written). Adopted
+     *  into the model by [land], on Main, for the document it belongs to. */
+    private class Rescued(val file: java.io.File?, val sibling: Uri?, val siblingName: String?, val keptPrivately: Boolean)
 
     /** "name (rescued).ext" in the folder of a document md reached through a
      *  tree grant, or null for any other document. */
-    private fun createRescueSibling(): Uri? = runCatching {
-        val target = uri ?: return null
+    private fun createRescueSibling(target: Uri?, displayName: String): Uri? = runCatching {
+        target ?: return null
         val treeId = android.provider.DocumentsContract.getTreeDocumentId(target)
         val tree = android.provider.DocumentsContract.buildTreeDocumentUri(target.authority, treeId)
         val path = android.provider.DocumentsContract.findDocumentPath(resolver, target)?.path ?: return null
