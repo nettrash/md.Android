@@ -72,7 +72,7 @@ object EpubExporter {
     /** A rendered rich element: its CSS-px display size (the img tag's
      *  width/height, so readers show it at the authored size) and the
      *  captured pixels, PNG-encoded later on IO. */
-    private class RichCapture(val cssWidth: Int, val cssHeight: Int, val bitmap: Bitmap)
+    private class RichCapture(val cssWidth: Int, val cssHeight: Int, val png: ByteArray)
 
     /** One content document being assembled: the XHTML [body] still
      *  carries its rich elements; [richKinds] lists them in document
@@ -199,15 +199,7 @@ object EpubExporter {
         }
         val captures = renderRich(context, prepared.source, prepared.title, prepared.richKinds.size)
             ?: return null
-        val pngs = withContext(Dispatchers.IO) {
-            captures.map { capture ->
-                val out = ByteArrayOutputStream()
-                capture.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                capture.bitmap.recycle()
-                out.toByteArray()
-            }
-        }
-        val tags = pngs.mapIndexed { index, bytes ->
+        val tags = captures.map { it.png }.mapIndexed { index, bytes ->
             val fileName = "images/rich-" + (images.size + 1).toString().padStart(3, '0') + ".png"
             images.add(EpubImage(fileName, bytes))
             val kind = prepared.richKinds[index]
@@ -299,25 +291,44 @@ object EpubExporter {
                     View.MeasureSpec.makeMeasureSpec(heightPx, View.MeasureSpec.EXACTLY),
                 )
                 view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-                handler.postDelayed({
-                    val captures = runCatching {
-                        rects.map { (x, y, w, h) ->
-                            val bitmapWidth = ceil(w * density).toInt().coerceAtLeast(1)
-                            val bitmapHeight = ceil(h * density).toInt().coerceAtLeast(1)
-                            val bitmap = createBitmap(bitmapWidth, bitmapHeight)
+                // One element at a time: drawn here on Main, compressed to
+                // PNG on IO and its bitmap recycled before the next is
+                // drawn, so at most one capture's pixels are ever held.
+                val captures = ArrayList<RichCapture>(rects.size)
+                fun captureNext() {
+                    if (finished) return
+                    if (captures.size == rects.size) {
+                        finish(captures)
+                        return
+                    }
+                    val (x, y, w, h) = rects[captures.size]
+                    val bitmap = runCatching {
+                        val size = CaptureBudget.capture(w, h, density)
+                        createBitmap(size.width, size.height).also { bitmap ->
                             Canvas(bitmap).apply {
+                                // The view draws in device px; a capped capture
+                                // shrinks it to the scale it was given.
+                                scale(size.scale / density, size.scale / density)
                                 translate(-x * density, -y * density)
                                 view.draw(this)
                             }
-                            RichCapture(
-                                ceil(w).toInt().coerceAtLeast(1),
-                                ceil(h).toInt().coerceAtLeast(1),
-                                bitmap,
-                            )
                         }
-                    }.getOrNull()
-                    finish(captures)
-                }, 250)
+                    }.getOrNull() ?: return finish(null)
+                    MainScope().launch {
+                        val png = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val out = ByteArrayOutputStream()
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                                out.toByteArray()
+                            }.also { bitmap.recycle() }.getOrNull()
+                        } ?: return@launch finish(null)
+                        captures.add(
+                            RichCapture(ceil(w).toInt().coerceAtLeast(1), ceil(h).toInt().coerceAtLeast(1), png),
+                        )
+                        captureNext()
+                    }
+                }
+                handler.postDelayed({ captureNext() }, 250)
             }
         }
 
