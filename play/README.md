@@ -8,7 +8,7 @@ are written separately, because the apps differ.)
 | File | Play Console field | Limit | Current |
 | --- | --- | --- | --- |
 | `listing/short_description.txt` | Short description | 80 | 78 |
-| `listing/full_description.txt` | Full description | 4000 | 3716 |
+| `listing/full_description.txt` | Full description | 4000 | 3995 |
 | `release-notes/en-US/default.txt` | What's new (per release) | 500 | 490 |
 | `graphics/store_icon_512.png` | App icon | 512×512 | — |
 | `graphics/feature_graphic_1024x500.png` | Feature graphic | 1024×500 | — |
@@ -24,7 +24,8 @@ them a real risk, not a nitpick:
 
 - **NOT "zero permissions", NOT "does not declare INTERNET".** Since 1.2
   the manifest declares `android.permission.INTERNET`, used for exactly one
-  thing: loading an image a document references by URL. The listing now
+  thing: loading an image a document references by URL — since 1.6 that
+  includes an EPUB's `cover:` given as an `https:` URL. The listing now
   says so plainly, and the Data safety form must match.
 - **NOT "no third-party libraries".** The app bundles the offline math and
   diagram engines (KaTeX, Mermaid, Graphviz, PlantUML). Only the Kotlin
@@ -40,7 +41,9 @@ them a real risk, not a nitpick:
 The answers that match this build: **no data collected, no data shared, no
 tracking.** The INTERNET permission is disclosed as above — a request goes
 only to the host named in the user's own document, and only when the
-document contains a remote image.
+document contains a remote image (or names an `https:` cover for an EPUB
+export; that fetch follows at most five redirects, https only, and each
+host on the way sees the device's IP address as the first one does).
 
 ## Wording that must stay accurate
 

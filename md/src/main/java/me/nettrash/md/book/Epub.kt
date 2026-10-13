@@ -58,6 +58,9 @@ internal class EpubBook(
     val rootArticles: List<EpubUnit>,
     val chapters: List<EpubChapter>,
     val images: List<EpubImage>,
+    /** From a single document's front matter (#12); a book keeps the default. */
+    val metadata: EpubMetadata = EpubMetadata.DEFAULT,
+    val cover: EpubCover? = null,
 ) {
     val units: List<EpubUnit> =
         listOf(titlePage) + rootArticles + chapters.flatMap { listOf(it.heading) + it.articles }
@@ -229,7 +232,7 @@ internal fun contentOpf(book: EpubBook, identifier: String, modified: String): S
     append("<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n")
     append("<dc:identifier id=\"book-id\">").append(escapeXml(identifier)).append("</dc:identifier>\n")
     append("<dc:title>").append(escapeXml(book.title)).append("</dc:title>\n")
-    append("<dc:language>en</dc:language>\n")
+    for (line in EpubFrontMatter.metadataLines(book.metadata, book.cover)) append(line).append("\n")
     append("<meta property=\"dcterms:modified\">").append(escapeXml(modified)).append("</meta>\n")
     append("</metadata>\n")
     append("<manifest>\n")
@@ -252,6 +255,7 @@ internal fun contentOpf(book: EpubBook, identifier: String, modified: String): S
         append("<item id=\"img-").append(index).append("\" href=\"").append(image.fileName)
             .append("\" media-type=\"image/png\"/>\n")
     }
+    book.cover?.let { append(EpubFrontMatter.coverItem(it)).append("\n") }
     append("</manifest>\n")
     append("<spine>\n")
     for (unit in book.units) {
@@ -478,6 +482,7 @@ internal fun buildEpub(
         for (image in book.images) {
             deflated("OEBPS/${image.fileName}", image.bytes)
         }
+        book.cover?.let { deflated("OEBPS/${it.href}", it.bytes) }
     }
     return out.toByteArray()
 }

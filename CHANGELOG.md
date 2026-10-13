@@ -25,6 +25,17 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
   25 and gives back its access to a file that falls off the end; a file that
   has been deleted or moved away leaves the list the first time it does not
   open. Clear Recent empties it. No new permission. (#11)
+- **An EPUB carries its author, language, date, description, series and
+  cover.** They come from the document's front matter — `author`,
+  `language`, `date`, `description`, `series` and `series_index`, matched as
+  `title` is — instead of the fixed English and nothing else every md EPUB
+  carried. A language that is not a tag stays English; a date that is not a
+  real one (a W3C date such as `2026-10-10`) is left out. `cover:` puts an
+  image on the book when md can read it — a file beside the document that md
+  can reach, an `https:` image or a `data:` image, in PNG, JPEG, GIF or WebP
+  — and is skipped silently otherwise. Every md app writes the same
+  metadata. A TextPack now also picks up the images beside a book article.
+  (#12)
 
 ### Changed
 

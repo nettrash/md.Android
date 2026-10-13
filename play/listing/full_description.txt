@@ -52,7 +52,7 @@ PRIVATE BY DESIGN
 
 md has no accounts, no telemetry, no advertising, no trackers, and collects no data at all. Your documents are read and written only through the system file picker.
 
-The app declares one permission: internet access, for a single purpose — loading an image your own document points at by URL, so it can be shown and printed. Everything else, including the rendering engines, runs on your device. md contacts no servers of ours; there are none.
+The app declares one permission: internet access, used only for an image your own document points at by URL — to show and print it, or as an e-book's cover. Everything else, including the rendering engines, runs on your device. md contacts no servers of ours; there are none.
 
 The full privacy policy is at https://nettrash.me/play/md/privacy.html.
 
