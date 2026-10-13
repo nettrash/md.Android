@@ -77,12 +77,19 @@ class AutosaveFlushInstrumentedTest {
         return result!!.getOrThrow()
     }
 
+    /** Loading reads off the main thread (#10): wait for the document to land. */
+    private fun waitUntil(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!onMain(condition) && System.currentTimeMillis() < deadline) Thread.sleep(20)
+    }
+
     /** A writable document with one second of unwritten edits in it — the
      *  state every test below starts from, and the one the guard waves
      *  through without a word. */
     private fun dirtyWritableDocument(): DocumentViewModel {
         val vm = onMain { DocumentViewModel(app) }
         onMain { vm.load(uri, writable = true) }
+        waitUntil { vm.uri != null }
         assertEquals(onDisk, onMain { vm.text })
         onMain { vm.onTextChange(typed) }
         assertTrue(onMain { vm.isDirty })
@@ -111,6 +118,7 @@ class AutosaveFlushInstrumentedTest {
         val vm = dirtyWritableDocument()
         onMain { vm.load(otherUri, writable = true) }
         assertEquals(typed, file.readText())
+        waitUntil { vm.uri == otherUri }
         assertEquals("elsewhere\n", onMain { vm.text })
     }
 
@@ -138,6 +146,7 @@ class AutosaveFlushInstrumentedTest {
         // file its sender withheld write access to.
         val vm = onMain { DocumentViewModel(app) }
         onMain { vm.load(uri, writable = false) }
+        waitUntil { vm.uri != null }
         onMain { vm.onTextChange(typed) }
         assertTrue(onMain { vm.needsDiscardPrompt })
         onMain { vm.newDocument() }
