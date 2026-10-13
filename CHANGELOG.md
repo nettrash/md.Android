@@ -19,6 +19,12 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
   the sending app allowed md to write it. A shared file md does not open —
   a photo, an archive — is turned down with a message, before anything
   open is touched. (#8)
+- **Open Recent, and recent documents on the launcher.** The More menu has
+  an Open Recent page listing the documents you have opened or saved, newest
+  first, and a long press on md's icon offers the last few. md keeps about
+  25 and gives back its access to a file that falls off the end; a file that
+  has been deleted or moved away leaves the list the first time it does not
+  open. Clear Recent empties it. No new permission. (#11)
 
 ### Changed
 

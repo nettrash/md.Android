@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +84,9 @@ sealed interface Replacement {
      *  grant flags on it are what decide whether the document opens writable
      *  (see [DocumentViewModel.openIncoming]). */
     data class Incoming(val intent: Intent) : Replacement
+
+    /** A document from Open Recent, reopened with the grant md kept for it. */
+    data class Recent(val uri: Uri) : Replacement
 
     /** Leaving with Back, which replaces the document with nothing at all. */
     data object Exit : Replacement
@@ -219,6 +223,38 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The file as md last read or wrote it (see DiskStamp.kt). */
     private var diskStamp: DiskStamp? = null
+
+    // ---- Open Recent (#11) ---------------------------------------------
+
+    private val recent = RecentDocuments(app)
+
+    /** The documents Open Recent lists, newest first. */
+    var recentDocuments: List<RecentEntry> by mutableStateOf(recent.entries())
+        private set
+
+    init {
+        // A grant Clear Recent could not give back because its document was
+        // open is given back once another document replaces it.
+        viewModelScope.launch {
+            snapshotFlow { documentToken }.collect { recent.releaseDeferred(open = uri) }
+        }
+    }
+
+    /** Reopen a document from Open Recent (after the guard): writable when md
+     *  still holds the write half of the grant. */
+    fun openRecent(target: Uri) = open(target, holdsWriteGrant(target), fromBook = false)
+
+    /** Clear Recent: forget them all and give back every grant but the open
+     *  document's. */
+    fun clearRecent() {
+        recent.clear(open = uri)
+        recentDocuments = recent.entries()
+    }
+
+    private fun rememberRecent(target: Uri, name: String) {
+        recent.record(target, name, open = target)
+        recentDocuments = recent.entries()
+    }
 
     /** The app-private copy and the sibling beside the original that the
      *  current run of failed saves writes to — one of each per run, rewritten
@@ -396,7 +432,22 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         val revision = editRevision
         isLoading = true
         val job = viewModelScope.launch {
-            val read = withContext(Dispatchers.IO) { read(target) } ?: return@launch
+            val read = withContext(Dispatchers.IO) { read(target) }
+            if (read == null) {
+                // A remembered document that no longer opens leaves the list
+                // (and the launcher) quietly; the writer is told once.
+                val remembered = recentDocuments.firstOrNull { it.uri == target.toString() }
+                if (remembered != null) {
+                    recent.remove(target)
+                    recentDocuments = recent.entries()
+                    android.widget.Toast.makeText(
+                        getApplication(),
+                        "Couldn't open “${remembered.name}”.",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+                return@launch
+            }
             // An edit that reached the old document while the read was out
             // (the editor is read-only, but a command can still edit it) is
             // landed like the open's own flush — or, when it cannot be, the
@@ -407,6 +458,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
             when (read) {
                 is Read.Pack -> importTextPack(read.text, read.name)
                 is Read.Text -> {
+                    if (!fromBook) rememberRecent(target, read.name)
                     forgetFile(read.stamp)
                     text = read.text
                     dressing = read.dressing
@@ -499,6 +551,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         canWrite = true
         isDirty = false
         isBookArticle = false
+        rememberRecent(target, displayName)
         return true
     }
 
@@ -635,10 +688,11 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  file manager sends VIEW with a write grant, and both actions are
      *  claimed by the same filters). ACTION_SEND text opens untitled.
      *
-     *  A writable hand-off also asks for a persistable grant, so the same
-     *  document is still writable the next time it arrives — wrapped, because
-     *  plenty of providers refuse, and a refusal only costs us the grant we
-     *  already have for this launch. */
+     *  A hand-off also asks for whatever persistable grant it offers, so the
+     *  same document is still writable the next time it arrives — and, read
+     *  only, can still be listed in Open Recent — wrapped, because plenty of
+     *  providers refuse, and a refusal only costs us the grant we already
+     *  have for this launch. */
     fun openIncoming(intent: Intent) {
         when (intent.action) {
             Intent.ACTION_VIEW, Intent.ACTION_EDIT -> {
@@ -647,7 +701,9 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                     intentFlags = intent.flags,
                     holdsWriteGrant = holdsWriteGrant(target),
                 )
-                if (writable) takePersistableGrant(target, intent.flags)
+                // Read-only too: a persistable read grant is what lets a
+                // read-only hand-off appear in Open Recent.
+                takePersistableGrant(target, intent.flags)
                 load(target, writable = writable)
             }
             Intent.ACTION_SEND -> {
@@ -664,7 +720,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                     intentFlags = intent.flags,
                     holdsWriteGrant = holdsWriteGrant(stream),
                 )
-                if (writable) takePersistableGrant(stream, intent.flags)
+                takePersistableGrant(stream, intent.flags)
                 load(stream, writable = writable)
             }
         }

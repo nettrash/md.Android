@@ -118,6 +118,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Save
@@ -658,6 +659,7 @@ fun EditorScreen(viewModel: DocumentViewModel) {
             is Replacement.Example -> openExample(request.fileName)
             Replacement.ExampleBook -> exampleBookLauncher.launch(null)
             is Replacement.Incoming -> viewModel.openIncoming(request.intent)
+            is Replacement.Recent -> viewModel.openRecent(request.uri)
             Replacement.Exit -> activity?.finish()
         }
     }
@@ -956,6 +958,11 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                         MenuRow("Open…", Icons.Filled.FolderOpen) {
                                             menuOpen = false; confirmDiscard(Replacement.Open)
                                         }
+                                        SubmenuRow(
+                                            "Open Recent",
+                                            Icons.Filled.History,
+                                            enabled = viewModel.recentDocuments.isNotEmpty(),
+                                        ) { menuPage = MenuPage.RECENT }
                                         SubmenuRow("Examples", Icons.AutoMirrored.Filled.MenuBook) {
                                             menuPage = MenuPage.EXAMPLES
                                         }
@@ -981,6 +988,23 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                             menuOpen = false; notesOpen = true
                                         }
                                         SubmenuRow("Typing", Icons.Filled.TextFields) { menuPage = MenuPage.TYPING }
+                                    }
+                                    // The documents md still holds a grant for, newest
+                                    // first (see RecentDocuments). Each goes through
+                                    // the guard like any other replacement.
+                                    MenuPage.RECENT -> {
+                                        BackRow("Open Recent") { menuPage = MenuPage.MAIN }
+                                        viewModel.recentDocuments.forEach { entry ->
+                                            MenuRow(entry.name) {
+                                                menuOpen = false
+                                                confirmDiscard(Replacement.Recent(entry.uri.toUri()))
+                                            }
+                                        }
+                                        HorizontalDivider()
+                                        MenuRow("Clear Recent") {
+                                            viewModel.clearRecent()
+                                            menuPage = MenuPage.MAIN
+                                        }
                                     }
                                     // The bundled examples: picking one seeds a fresh
                                     // untitled document with that sample (openExample).
