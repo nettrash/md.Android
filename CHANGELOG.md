@@ -11,19 +11,20 @@ The `versionCode` is auto-incremented on every build by a Gradle finalizer
 
 ### Added
 
-- **Formatting commands, and a formatting bar on phones.** Bold, Italic,
-  Code, Strikethrough, Link, Heading 1–6, Bullet List, Task List, Quote,
-  Indent and Outdent, from a hardware keyboard — Ctrl+B, Ctrl+I, Ctrl+K,
-  Ctrl+Shift+C, Ctrl+Shift+X, Ctrl+Alt+1…6, Ctrl+Shift+L, Ctrl+Shift+T,
-  Ctrl+Shift+Q, Ctrl+] and Ctrl+[ — and from a new **Format** page in the More
-  menu. On a phone, a bar above the keyboard carries Bold, Italic, Code, Link,
-  Heading (H1, H2, H3, then none), Bullet List, Task List, Quote, Outdent and
-  Indent, without closing the keyboard. Each command toggles — run it again to
-  take it off — and is one step for Undo. Typing `*`, `_`, a backtick or `$`
-  with text selected wraps the selection instead of replacing it; **Wrap
-  Selection When Typing * _ ` $** under Typing turns that off. Every md app
-  formats a selection the same way, checked against the same 137 cases.
-  (#13)
+- **Formatting commands, and a formatting bar on phones.** Bold, Italic, Code,
+  Strikethrough, Link, Heading 1–6, Bullet List, Task List, Quote, Indent and
+  Outdent, from a hardware keyboard — Ctrl+B, Ctrl+I, Ctrl+K, Ctrl+Shift+C,
+  Ctrl+Shift+X, Ctrl+Alt+1…6, Ctrl+Shift+L, Ctrl+Shift+T, Ctrl+Shift+Q, Ctrl+]
+  and Ctrl+[ — and from a new **Format** page in the More menu. On a phone, a
+  bar above the keyboard carries Bold, Italic, Code, Link, Heading (H1, H2,
+  H3, then none), Bullet List, Task List, Quote, Outdent and Indent, without
+  closing the keyboard. Bold, Italic, Code, Strikethrough, the headings, the
+  lists and Quote toggle — run one again to take it off; Link inserts link
+  syntax, and Indent and Outdent add and remove indentation. Every command is
+  one step for Undo. Typing `*`, `_`, a backtick or `$` with text selected
+  wraps the selection instead of replacing it; **Wrap Selection When Typing *
+  _ ` $** under Typing turns that off. Every md app formats a selection the
+  same way, checked against the same 137 cases. (#13)
 - **Share a file to md.** "Share → md" used to take only shared text; it
   now takes a file too — Markdown in any of its spellings, plain text,
   PlantUML, Graphviz and TextPack. A shared file opens exactly as one
