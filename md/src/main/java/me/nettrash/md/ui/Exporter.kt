@@ -466,7 +466,7 @@ object Exporter {
      *  — it runs to completion synchronously on the caller's thread. */
     fun exportTextPack(context: Context, target: Uri, source: String, docUri: Uri?, title: String) {
         val (rewritten, assets) = TextBundle.exportRewriting(source) { relativePath ->
-            readLocalAsset(docUri, relativePath)
+            LocalAssets.read(context, docUri, relativePath)
         }
         val entries = TextBundle.bundleEntries(sanitized(title), rewritten, assets)
         val bytes = TextBundle.pack(entries)
@@ -478,30 +478,6 @@ object Exporter {
         if (!written) {
             Toast.makeText(context, "Couldn't export the TextPack.", Toast.LENGTH_LONG).show()
         }
-    }
-
-    /** Read an image the document references by relative path, if it sits beside
-     *  the document and md can reach it. The resolved path is constrained to the
-     *  document's own folder — a `../…` ref that would climb out is treated as
-     *  not found (and so left untouched), the same containment the iOS resolver
-     *  and the preview scheme handler enforce.
-     *
-     *  PLATFORM LIMIT — this only works for a `file://` document. A SAF
-     *  `content://` document (the common case: anything opened through the
-     *  document picker) cannot enumerate its siblings without a whole-tree grant
-     *  the view model does not hold, so its refs simply resolve to null and are
-     *  left exactly as the author wrote them — the same honest outcome an unsaved
-     *  document gets on every platform (empty `assets/`, nothing deleted). The
-     *  pure rewrite is identical to iOS regardless; only what the resolver can
-     *  reach differs. */
-    private fun readLocalAsset(docUri: Uri?, relativePath: String): ByteArray? {
-        val uri = docUri ?: return null
-        if (uri.scheme != "file") return null
-        val folder = File(uri.path ?: return null).parentFile ?: return null
-        val base = runCatching { folder.canonicalFile }.getOrNull() ?: return null
-        val candidate = runCatching { File(base, relativePath).canonicalFile }.getOrNull() ?: return null
-        if (candidate.path != base.path && !candidate.path.startsWith(base.path + File.separator)) return null
-        return candidate.takeIf { it.isFile }?.let { runCatching { it.readBytes() }.getOrNull() }
     }
 
     // ---- LaTeX --------------------------------------------------------

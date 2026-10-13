@@ -80,6 +80,25 @@ internal enum class ShortcutAction {
     /** Ctrl+Alt+Up / Ctrl+Alt+Down — step through the book in reading order. */
     PREVIOUS_ARTICLE,
     NEXT_ARTICLE,
+
+    /** The formatting commands (#13, docs/formatting.md §5): Ctrl+B / I / K,
+     *  Ctrl+Shift+C / X, Ctrl+Alt+1…6, Ctrl+Shift+L / T / Q, Ctrl+] / [. */
+    BOLD,
+    ITALIC,
+    LINK,
+    CODE,
+    STRIKETHROUGH,
+    HEADING_1,
+    HEADING_2,
+    HEADING_3,
+    HEADING_4,
+    HEADING_5,
+    HEADING_6,
+    BULLET_LIST,
+    TASK_LIST,
+    QUOTE,
+    INDENT,
+    OUTDENT,
 }
 
 /**
@@ -91,14 +110,26 @@ internal enum class ShortcutKey {
     NUMBER_1,
     NUMBER_2,
     NUMBER_3,
+    NUMBER_4,
+    NUMBER_5,
+    NUMBER_6,
     B,
+    C,
     F,
+    I,
+    K,
+    L,
     N,
     O,
     P,
+    Q,
     S,
+    T,
+    X,
     UP,
     DOWN,
+    OPEN_BRACKET,
+    CLOSE_BRACKET,
 }
 
 /**
@@ -136,6 +167,21 @@ internal object Shortcuts {
      *     Find              Chord(VirtualKeys.F,       Ctrl)
      *     PreviousArticle   Chord(VirtualKeys.Up,      CtrlAlt)
      *     NextArticle       Chord(VirtualKeys.Down,    CtrlAlt)
+     *     Bold              Chord(VirtualKeys.B,       Ctrl)
+     *     Italic            Chord(VirtualKeys.I,       Ctrl)
+     *     Link              Chord(VirtualKeys.K,       Ctrl)
+     *     InlineCode        Chord(VirtualKeys.C,       CtrlShift)
+     *     Strikethrough     Chord(VirtualKeys.X,       CtrlShift)
+     *     Heading1…6        Chord(VirtualKeys.Number1…6, CtrlAlt)
+     *     BulletList        Chord(VirtualKeys.L,       CtrlShift)
+     *     TaskList          Chord(VirtualKeys.T,       CtrlShift)
+     *     Quote             Chord(VirtualKeys.Q,       CtrlShift)
+     *     Indent            Chord(VirtualKeys.CloseBracket, Ctrl)
+     *     Outdent           Chord(VirtualKeys.OpenBracket,  Ctrl)
+     *
+     * Ctrl+Alt+digit is safe here as it is not on Windows: Android reports
+     * AltGr as Right-Alt alone, never Ctrl+Alt, so a heading chord cannot
+     * swallow the ² a German keyboard types with AltGr+2.
      */
     val table: Map<ShortcutAction, Chord> = mapOf(
         ShortcutAction.NEW to Chord(ShortcutKey.N, CTRL),
@@ -150,7 +196,44 @@ internal object Shortcuts {
         ShortcutAction.FIND to Chord(ShortcutKey.F, CTRL),
         ShortcutAction.PREVIOUS_ARTICLE to Chord(ShortcutKey.UP, CTRL_ALT),
         ShortcutAction.NEXT_ARTICLE to Chord(ShortcutKey.DOWN, CTRL_ALT),
+        ShortcutAction.BOLD to Chord(ShortcutKey.B, CTRL),
+        ShortcutAction.ITALIC to Chord(ShortcutKey.I, CTRL),
+        ShortcutAction.LINK to Chord(ShortcutKey.K, CTRL),
+        ShortcutAction.CODE to Chord(ShortcutKey.C, CTRL_SHIFT),
+        ShortcutAction.STRIKETHROUGH to Chord(ShortcutKey.X, CTRL_SHIFT),
+        ShortcutAction.HEADING_1 to Chord(ShortcutKey.NUMBER_1, CTRL_ALT),
+        ShortcutAction.HEADING_2 to Chord(ShortcutKey.NUMBER_2, CTRL_ALT),
+        ShortcutAction.HEADING_3 to Chord(ShortcutKey.NUMBER_3, CTRL_ALT),
+        ShortcutAction.HEADING_4 to Chord(ShortcutKey.NUMBER_4, CTRL_ALT),
+        ShortcutAction.HEADING_5 to Chord(ShortcutKey.NUMBER_5, CTRL_ALT),
+        ShortcutAction.HEADING_6 to Chord(ShortcutKey.NUMBER_6, CTRL_ALT),
+        ShortcutAction.BULLET_LIST to Chord(ShortcutKey.L, CTRL_SHIFT),
+        ShortcutAction.TASK_LIST to Chord(ShortcutKey.T, CTRL_SHIFT),
+        ShortcutAction.QUOTE to Chord(ShortcutKey.Q, CTRL_SHIFT),
+        ShortcutAction.INDENT to Chord(ShortcutKey.CLOSE_BRACKET, CTRL),
+        ShortcutAction.OUTDENT to Chord(ShortcutKey.OPEN_BRACKET, CTRL),
     )
+
+    /** The formatting command a chord runs, or null for any other action. */
+    fun formatOp(action: ShortcutAction): me.nettrash.md.markdown.FormatOp? = when (action) {
+        ShortcutAction.BOLD -> me.nettrash.md.markdown.FormatOp.BOLD
+        ShortcutAction.ITALIC -> me.nettrash.md.markdown.FormatOp.ITALIC
+        ShortcutAction.LINK -> me.nettrash.md.markdown.FormatOp.LINK
+        ShortcutAction.CODE -> me.nettrash.md.markdown.FormatOp.CODE
+        ShortcutAction.STRIKETHROUGH -> me.nettrash.md.markdown.FormatOp.STRIKETHROUGH
+        ShortcutAction.HEADING_1 -> me.nettrash.md.markdown.FormatOp.HEADING1
+        ShortcutAction.HEADING_2 -> me.nettrash.md.markdown.FormatOp.HEADING2
+        ShortcutAction.HEADING_3 -> me.nettrash.md.markdown.FormatOp.HEADING3
+        ShortcutAction.HEADING_4 -> me.nettrash.md.markdown.FormatOp.HEADING4
+        ShortcutAction.HEADING_5 -> me.nettrash.md.markdown.FormatOp.HEADING5
+        ShortcutAction.HEADING_6 -> me.nettrash.md.markdown.FormatOp.HEADING6
+        ShortcutAction.BULLET_LIST -> me.nettrash.md.markdown.FormatOp.BULLET_LIST
+        ShortcutAction.TASK_LIST -> me.nettrash.md.markdown.FormatOp.TASK_LIST
+        ShortcutAction.QUOTE -> me.nettrash.md.markdown.FormatOp.QUOTE
+        ShortcutAction.INDENT -> me.nettrash.md.markdown.FormatOp.INDENT
+        ShortcutAction.OUTDENT -> me.nettrash.md.markdown.FormatOp.OUTDENT
+        else -> null
+    }
 
     /** The chord for [action]. The table is complete by construction and a
      *  test says so, so the lookup is allowed to be total. */

@@ -321,6 +321,21 @@ internal class TypingOverride {
     }
 
     /**
+     * A formatting command's edit (Bold, a heading, the typed wrap), tracked
+     * like any other — except that it is not the writer deleting the capital
+     * md just made. Wrapping `Word` as `**Word**` takes the capital along,
+     * which [edited] reads as its removal and arms the override where the
+     * word began, so the next word typed there would skip the sentence rule.
+     * An override this edit armed is dropped; one already armed, or a capital
+     * the edit merely moves, is left as it was.
+     */
+    fun formatted(text: CharSequence, start: Int, end: Int, inserted: String, selectionStart: Int, selectionEnd: Int) {
+        val wasArmed = isArmed
+        edited(text, start, end, inserted, selectionStart, selectionEnd)
+        if (!wasArmed && isArmed) clear()
+    }
+
+    /**
      * A whole change set, every range in the coordinates of [text], the text
      * before it. Walked last to first, so each change is applied while the
      * ones before it — which alone can move `p` and `q` — are still pending.
@@ -463,6 +478,15 @@ internal class TypingSettings(context: Context) {
     var capitalizeSentences: Boolean by mutableStateOf(prefs.getBoolean(CAPITALIZE_SENTENCES_KEY, true))
         private set
 
+    /** Typing `*` `_` `` ` `` `$` over a selection wraps it (#13); on by default. */
+    var wrapSelection: Boolean by mutableStateOf(prefs.getBoolean(WRAP_SELECTION_KEY, true))
+        private set
+
+    fun chooseWrapSelection(on: Boolean) {
+        wrapSelection = on
+        prefs.edit { putBoolean(WRAP_SELECTION_KEY, on) }
+    }
+
     fun chooseContinueLists(on: Boolean) {
         continueLists = on
         prefs.edit { putBoolean(CONTINUE_LISTS_KEY, on) }
@@ -477,6 +501,8 @@ internal class TypingSettings(context: Context) {
         /** The preferences keys, verbatim on every platform (§3.1). */
         const val CONTINUE_LISTS_KEY = "md.continueLists"
         const val CAPITALIZE_SENTENCES_KEY = "md.capitalizeSentences"
+        /** md.win's key for the same setting. */
+        const val WRAP_SELECTION_KEY = "md.wrapSelection"
 
         /** The file: ViewModeStore's. */
         const val PREFS = "view"

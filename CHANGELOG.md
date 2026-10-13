@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The `versionCode` is auto-incremented on every build by a Gradle finalizer
 (mirroring the iOS app's `agvtool bump`) and is not tracked here.
 
+## [1.6] — 2026-10-13
+
+### Added
+
+- **Formatting commands, and a formatting bar on phones.** Bold, Italic, Code,
+  Strikethrough, Link, Heading 1–6, Bullet List, Task List, Quote, Indent and
+  Outdent, from a hardware keyboard — Ctrl+B, Ctrl+I, Ctrl+K, Ctrl+Shift+C,
+  Ctrl+Shift+X, Ctrl+Alt+1…6, Ctrl+Shift+L, Ctrl+Shift+T, Ctrl+Shift+Q, Ctrl+]
+  and Ctrl+[ — and from a new **Format** page in the More menu. On a phone, a
+  bar above the keyboard carries Bold, Italic, Code, Link, Heading (H1, H2,
+  H3, then none), Bullet List, Task List, Quote, Outdent and Indent, without
+  closing the keyboard. Bold, Italic, Code, Strikethrough, the headings, the
+  lists and Quote toggle — run one again to take it off; Link inserts link
+  syntax, and Indent and Outdent add and remove indentation. Every command is
+  one step for Undo. Typing `*`, `_`, a backtick or `$` with text selected
+  wraps the selection instead of replacing it; **Wrap Selection When Typing *
+  _ ` $** under Typing turns that off. Every md app formats a selection the
+  same way, checked against the same 137 cases. (#13)
+- **Share a file to md.** "Share → md" used to take only shared text; it
+  now takes a file too — Markdown in any of its spellings, plain text,
+  PlantUML, Graphviz and TextPack. A shared file opens exactly as one
+  opened with md does: a TextPack is imported, the unsaved-changes question
+  is asked first when it has to be, and the file opens read-only unless
+  the sending app allowed md to write it. A shared file md does not open —
+  a photo, an archive — is turned down with a message, before anything
+  open is touched. (#8)
+- **Open Recent, and recent documents on the launcher.** The More menu has
+  an Open Recent page listing the documents you have opened or saved, newest
+  first, and a long press on md's icon offers the last few. md keeps about
+  25 and gives back its access to a file that falls off the end; a file that
+  has been deleted or moved away leaves the list the first time it does not
+  open. Clear Recent empties it. No new permission. (#11)
+- **An EPUB carries its author, language, date, description, series and
+  cover.** They come from the document's front matter — `author`,
+  `language`, `date`, `description`, `series` and `series_index`, matched as
+  `title` is — instead of the fixed English and nothing else every md EPUB
+  carried. A language that is not a tag stays English; a date that is not a
+  real one (a W3C date such as `2026-10-10`) is left out. `cover:` puts an
+  image on the book when md can read it — a file beside the document that md
+  can reach, an `https:` image or a `data:` image, in PNG, JPEG, GIF or WebP
+  — and is skipped silently otherwise. Every md app writes the same
+  metadata. A TextPack now also picks up the images beside a book article.
+  (#12)
+
+### Changed
+
+- **Opening a file no longer freezes the app.** The file is read off the
+  main thread, so a large one on a slow or cloud provider opens without
+  stalling the editor. (#10)
+- **md does not overwrite a file that changed while you were editing it.**
+  If another app changes the file under unsaved edits, md stops saving and
+  a bar offers **Reload** (take the file as it is now) or **Keep Mine**
+  (write your version over it). (#10)
+- **A save that fails never loses your text.** It is kept in md's own
+  storage at once, and — for a book article, whose folder md can reach —
+  beside the original as "name (rescued)". A bar says "Couldn't save — your
+  text is kept" and **Save a copy…** opens the system Save dialog; md goes
+  on in the copy. A document whose edits could not be saved is not
+  replaced by New, Open or a shared file until that is settled. (#10)
+
+- **A file is written back the way it came.** md used to save every file as
+  UTF-8 with whatever line breaks the editor held; it now keeps the
+  encoding it read — UTF-8, UTF-16, Windows-1251 or ISO-8859-1 — and the
+  file's line endings, so a Windows-1251 file with CRLF breaks is still one
+  after an edit. A character the file's encoding cannot hold (an emoji in a
+  Windows-1251 file) saves it as UTF-8 instead of losing the character, and
+  later saves stay UTF-8. The rule is the one md follows on the iPhone, the
+  Mac and Windows. (#7)
+
+### Fixed
+
+- **Large PlantUML diagrams render.** A diagram wider or taller than 4096
+  pixels — a sequence diagram of forty-odd participants is already past it —
+  used to show "Diagram too large for browser rendering" instead of the
+  drawing. The bundled engine's size check is lifted, as it already is in md
+  for VS Code, and an EPUB snapshot of a very tall diagram is taken at a
+  reduced resolution rather than running out of memory. (#9)
+
+- **A Markdown file saved with a UTF-8 byte-order mark opens properly.**
+  The mark used to arrive as an invisible character in front of the first
+  line, which hid the front matter and the first heading from the preview,
+  the Contents list and every export. It is dropped on reading and not
+  written back. (#7)
+
 ## [1.5] — 2026-09-23
 
 ### Added
