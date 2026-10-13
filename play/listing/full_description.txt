@@ -1,47 +1,50 @@
-md is a Markdown editor with the soul of a typewriter — warm paper, a serif face, and nothing between you and the text. Write on one side and watch the rendered page on the other. Then print it, export it, or turn a folder of chapters into a whole book.
+md is a Markdown editor with the soul of a typewriter — warm paper, a serif face, and nothing between you and the text. Then print it, export it, or turn a folder of chapters into a whole book.
 
 THREE LAYOUTS
 
 • Edit — a full-screen, distraction-free editor.
-• Split — editor and preview side by side, re-rendering as you type and scrolling as one: move either pane and the other follows. Offered on wide screens; it stacks when the window is narrow.
+• Split — editor and preview side by side, re-rendering as you type and scrolling as one. Offered on wide screens.
 • Preview — just the rendered page.
 
-The app bar remembers your choice, and a live word and character count sits under every page.
+md remembers each file's layout, and a live word and character count sits under every page.
 
 THE MARKDOWN YOU ACTUALLY WRITE
 
-• Headings, bold, italic, inline code, links and strikethrough
-• Bullet, numbered and task lists, with nesting
-• Fenced code blocks, block quotes, tables with column alignment, thematic breaks
-• Images, including ones your document points at by URL
+• Headings, emphasis, links, nested and task lists, code blocks, quotes, aligned tables
+• Images, local or by URL
 • LaTeX math and mhchem chemistry, Mermaid graphs, Graphviz and PlantUML diagrams — all drawn on your device by engines built into the app
-• Syntax-highlighted code, in a quiet palette that matches the page rather than a bright editor theme
+• Syntax-highlighted code in a quiet palette that matches the page
 • Footnotes, and YAML or TOML front matter recognised as metadata and kept out of the page
-• CSV and TSV blocks drawn as tables, the first row the header, number columns lined up on the right
+• CSV and TSV blocks drawn as tables
 • A table of contents that jumps the preview to any heading
 • Private author notes — an HTML comment on its own line beginning with “note:” — listed in a Notes panel, never rendered into the page, PDF or printout
+
+WRITE FASTER
+
+• Formatting at a tap: a bar above the phone keyboard and a Format page in the menu for bold, italic, code, links, headings, lists, quotes and indents — and Ctrl+B, Ctrl+I, Ctrl+K and the rest on a hardware keyboard.
+• Find and replace, with Replace All as a single undo.
+• Return continues lists, quotes and tables, and sentences start with a capital. Both are switches.
 
 WRITER MODE: BOOKS
 
 • A book is simply a folder you pick: its subfolders are chapters, its Markdown files are articles, ordered by name.
-• Open any article to write it, and create, rename, reorder and delete chapters and articles in place — the order is written back to the file names, so it stays true in your file manager.
-• Compile the whole book into one PDF at the size you choose, or a standard EPUB 3 with a table of contents — math and diagrams travel as images.
+• Create, rename, reorder and delete chapters and articles in place — the order is written back to the file names, so it stays true in your file manager.
+• Compile the whole book into one PDF at the size you choose, or a standard EPUB 3 with a table of contents.
 
 PRINT AND EXPORT
 
-• Share or export the rendered document as real pages — A4, A5, US Letter, US Legal, or a paperback trim (6×9, 5×8, 5.5×8.5) for print. Pagination is line-aware, so no line is sliced at a page boundary, and \newpage starts a fresh page where you decide. White paper, dark ink — or print through the system dialog.
+• Share or export the rendered document as real pages — A4, A5, US Letter, US Legal, or a paperback trim (6×9, 5×8, 5.5×8.5) for print. Breaks fall between lines, and \newpage starts a fresh page where you decide. Or print through the system dialog.
 • Export as HTML: one self-contained file that opens anywhere — diagrams as drawings, formulas as real text.
 • Export as LaTeX: a .tex file where your mathematics stays mathematics.
-• Export a diagram as a standalone .svg vector, or a single document as a standard EPUB 3.
+• Export a diagram as a standalone .svg vector, or a document as a standard EPUB 3 that carries the author, language, series and cover its front matter names.
 • Share the raw Markdown source, or open and export TextBundle / TextPack, the Markdown-with-images container.
 
 YOUR FILES, ANYWHERE
 
-md is document-based, built on Android's Storage Access Framework:
-
-• Open, create and save .md / .markdown / .txt files in any location the system file picker can reach — device storage, SD card, or any cloud provider that plugs into it. md also opens .puml, .gv and .textpack files.
-• "Open with md" from your file manager, or share text into md from any app.
-• Your work is saved as you write, and again when you leave the app.
+• Open, create and save Markdown in every spelling, and .txt, anywhere the system file picker reaches — device storage or any cloud provider. md also opens .puml, .gv and .textpack files.
+• "Open with md" from your file manager, or share a file or text into md from any app.
+• Open Recent lists what you worked on, and a long press on md's icon offers the last few.
+• Your work is saved as you write. Files keep their encoding and line endings, md asks before overwriting a file another app changed, and a save that fails never loses your text.
 • Built-in examples, including a sample book, show all the app can do.
 
 TYPEWRITER FEEL
@@ -50,7 +53,7 @@ Warm paper — "fresh paper" in light, "carbon paper" in dark — a serif prose 
 
 PRIVATE BY DESIGN
 
-md has no accounts, no telemetry, no advertising, no trackers, and collects no data at all. Your documents are read and written only through the system file picker.
+md has no accounts, no telemetry, no advertising, no trackers, and collects no data at all.
 
 The app declares one permission: internet access, used only for an image your own document points at by URL — to show and print it, or as an e-book's cover. Everything else, including the rendering engines, runs on your device. md contacts no servers of ours; there are none.
 

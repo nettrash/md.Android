@@ -8,8 +8,8 @@ are written separately, because the apps differ.)
 | File | Play Console field | Limit | Current |
 | --- | --- | --- | --- |
 | `listing/short_description.txt` | Short description | 80 | 78 |
-| `listing/full_description.txt` | Full description | 4000 | 3995 |
-| `release-notes/en-US/default.txt` | What's new (per release) | 500 | 442 |
+| `listing/full_description.txt` | Full description | 4000 | 3982 |
+| `release-notes/en-US/default.txt` | What's new (per release) | 500 | 441 |
 | `graphics/store_icon_512.png` | App icon | 512×512 | — |
 | `graphics/feature_graphic_1024x500.png` | Feature graphic | 1024×500 | — |
 
