@@ -170,6 +170,11 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
 
     private val resolver get() = getApplication<Application>().contentResolver
 
+    /** How the open file is written back: the encoding and line endings it
+     *  was read with (see TextCodec.kt). A new document, shared-in text and an
+     *  imported pack write UTF-8 with LF. */
+    private var dressing = TextDressing.DEFAULT
+
     private var autosave: Job? = null
 
     /** The editor's buffer changed — relayed from the text field's own
@@ -205,15 +210,17 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
             if (!isDirty || !canWrite) return@launch
             val target = uri ?: return@launch
             val snapshot = text
+            val dressed = dressing
             val written = withContext(Dispatchers.IO) {
                 runCatching {
+                    val encoded = TextCodec.dress(snapshot, dressed)
                     // "wt" truncates, like `write` — no stale tail bytes.
-                    resolver.openOutputStream(target, "wt")?.use {
-                        it.write(snapshot.toByteArray(Charsets.UTF_8))
-                    } != null
-                }.getOrDefault(false)
+                    val ok = resolver.openOutputStream(target, "wt")?.use { it.write(encoded.data) } != null
+                    if (ok) encoded.encoding else null
+                }.getOrNull()
             }
-            if (written && text == snapshot) isDirty = false
+            if (written != null) rememberEncoding(dressed, written)
+            if (written != null && text == snapshot) isDirty = false
         }
     }
 
@@ -245,6 +252,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
         flushPendingAutosave()   // the beat the autosave still owes lands first
         autosave?.cancel()   // a stale save must not chase the old document
         text = ""
+        dressing = TextDressing.DEFAULT
         uri = null
         displayName = "Untitled"
         canWrite = false
@@ -257,11 +265,12 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     fun acceptSharedText(shared: String) {
         flushPendingAutosave()   // the beat the autosave still owes lands first
         autosave?.cancel()   // a stale save must not chase the old document
-        text = shared
+        text = LineEndings.normalize(shared)
+        dressing = TextDressing.DEFAULT
         uri = null
         displayName = "Untitled"
         canWrite = false
-        isDirty = shared.isNotEmpty()
+        isDirty = text.isNotEmpty()
         isBookArticle = false
         documentToken++
     }
@@ -290,7 +299,9 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
             importTextPack(imported, name)
             return
         }
-        text = decodeText(bytes)
+        val (decoded, read) = TextCodec.undress(bytes)
+        text = decoded
+        dressing = read
         uri = target
         displayName = name
         canWrite = writable
@@ -310,7 +321,8 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
      *  writable UTI. The imported text is unsaved content, so it starts dirty,
      *  the same as shared-in text. */
     private fun importTextPack(imported: String, name: String) {
-        text = imported
+        text = LineEndings.normalize(imported)
+        dressing = TextDressing.DEFAULT
         uri = null
         displayName = packBaseName(name)
         canWrite = false
@@ -344,9 +356,10 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
                 val bytes = runCatching {
                     resolver.openInputStream(target)?.use { it.readBytes() }
                 }.getOrNull() ?: return@withContext null
-                decodeText(bytes) to (queryName(target) ?: target.lastPathSegment ?: "Untitled")
+                TextCodec.undress(bytes) to (queryName(target) ?: target.lastPathSegment ?: "Untitled")
             } ?: return@launch
-            text = loaded.first
+            text = loaded.first.first
+            dressing = loaded.first.second
             uri = target
             displayName = loaded.second
             canWrite = writable
@@ -486,15 +499,21 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun write(target: Uri): Boolean = runCatching {
+        val dressed = dressing
+        val encoded = TextCodec.dress(text, dressed)
         // "wt" = write + truncate, so a shorter edit doesn't leave a tail.
-        resolver.openOutputStream(target, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+        resolver.openOutputStream(target, "wt")?.use { it.write(encoded.data) } ?: return@runCatching false
+        rememberEncoding(dressed, encoded.encoding)
         true
     }.getOrDefault(false)
 
-    /** Decode bytes as text — see [TextCodec] for the (BOM-aware) trial
-     *  order, shared in spirit with the iOS/macOS siblings and pure so the
-     *  JVM tests can pin it. */
-    private fun decodeText(data: ByteArray): String = TextCodec.decode(data)
+    /** A save that had to upgrade the file to UTF-8 is remembered, so the next
+     *  one does not retry the encoding that cannot hold the text. Only when
+     *  the dressing is still the one the save used — a document opened in the
+     *  meantime has its own. */
+    private fun rememberEncoding(used: TextDressing, encoding: TextEncoding) {
+        if (dressing === used && encoding != used.encoding) dressing = used.copy(encoding = encoding)
+    }
 
     private fun queryName(target: Uri): String? = runCatching {
         resolver.query(target, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->

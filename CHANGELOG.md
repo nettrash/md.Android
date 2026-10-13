@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The `versionCode` is auto-incremented on every build by a Gradle finalizer
 (mirroring the iOS app's `agvtool bump`) and is not tracked here.
 
+## [1.6] — 2026-10-10
+
+### Added
+
+### Changed
+
+- **A file is written back the way it came.** md used to save every file as
+  UTF-8 with whatever line breaks the editor held; it now keeps the
+  encoding it read — UTF-8, UTF-16, Windows-1251 or ISO-8859-1 — and the
+  file's line endings, so a Windows-1251 file with CRLF breaks is still one
+  after an edit. A character the file's encoding cannot hold (an emoji in a
+  Windows-1251 file) saves it as UTF-8 instead of losing the character, and
+  later saves stay UTF-8. The rule is the one md follows on the iPhone, the
+  Mac and Windows. (#7)
+
+### Fixed
+
+- **A Markdown file saved with a UTF-8 byte-order mark opens properly.**
+  The mark used to arrive as an invisible character in front of the first
+  line, which hid the front matter and the first heading from the preview,
+  the Contents list and every export. It is dropped on reading and not
+  written back. (#7)
+
 ## [1.5] — 2026-09-23
 
 ### Added
