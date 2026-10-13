@@ -216,11 +216,25 @@
                 <data android:pathSuffix=".textpack" />
             </intent-filter>
 
-            <!-- Receive shared text — open it as a new untitled document. -->
+            <!-- Receive a share. Shared TEXT (EXTRA_TEXT) opens as a new
+                 untitled document; a shared FILE (EXTRA_STREAM) opens through
+                 the same load() as "Open with md" — imported if it is a pack,
+                 writable only when the sender granted write. A send carries no
+                 path, so Android matches it by MIME type alone: the list is the
+                 Open… picker's (DocumentTypes.SHAREABLE_MIME_TYPES, pinned by
+                 ManifestDocumentTypesTest), and the two catch-all types are
+                 accepted only for a file whose NAME carries one of md's
+                 extensions (DocumentTypes.acceptsSharedFile) — a shared zip or
+                 an untyped photo is refused with a message, before the
+                 unsaved-changes dialog could ask about it. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
             </intent-filter>
         </activity>
 
