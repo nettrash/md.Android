@@ -186,6 +186,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import me.nettrash.md.markdown.FormatOp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.material.icons.filled.FormatBold
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -718,6 +722,14 @@ fun EditorScreen(viewModel: DocumentViewModel) {
         }
     }
 
+    // A formatting command (#13), from a chord, the Format page or the phone
+    // bar: one undoable edit of the editor's text. Only while the editor is
+    // on screen — formatting text the writer cannot see would be a surprise.
+    fun format(op: FormatOp) {
+        if (currentMode == Mode.PREVIEW) return
+        editor.applyFormat(op)
+    }
+
     // What a chord runs. The table is `Shortcuts.kt` (md.win's CommandTable,
     // row for row); this is the other half — the same commands the menu rows
     // above run, reached from a hardware keyboard.
@@ -738,6 +750,7 @@ fun EditorScreen(viewModel: DocumentViewModel) {
             ShortcutAction.FIND -> openFind()
             ShortcutAction.PREVIOUS_ARTICLE -> stepArticle(-1)
             ShortcutAction.NEXT_ARTICLE -> stepArticle(1)
+            else -> Shortcuts.formatOp(action)?.let { format(it) }
         }
     }
 
@@ -987,6 +1000,9 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                         MenuRow("Notes…", Icons.Filled.EditNote, enabled = notes.isNotEmpty()) {
                                             menuOpen = false; notesOpen = true
                                         }
+                                        SubmenuRow("Format", Icons.Filled.FormatBold, enabled = currentMode != Mode.PREVIEW) {
+                                            menuPage = MenuPage.FORMAT
+                                        }
                                         SubmenuRow("Typing", Icons.Filled.TextFields) { menuPage = MenuPage.TYPING }
                                     }
                                     // The documents md still holds a grant for, newest
@@ -1138,8 +1154,27 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                                     // menu open — a setting, not an action. The
                                     // checkbox is display only (the row is the target),
                                     // so the row carries the state for accessibility.
+                                    // The formatting commands (#13), for a window with no
+                                    // keyboard chords and no phone bar; each closes the
+                                    // menu and edits the selection it left behind.
+                                    MenuPage.FORMAT -> {
+                                        BackRow("Format") { menuPage = MenuPage.MAIN }
+                                        FORMAT_ROWS.forEach { (label, op) ->
+                                            MenuRow(label) { menuOpen = false; format(op) }
+                                        }
+                                    }
                                     MenuPage.TYPING -> {
                                         BackRow("Typing") { menuPage = MenuPage.MAIN }
+                                        DropdownMenuItem(
+                                            text = { Text("Wrap Selection When Typing * _ ` $") },
+                                            modifier = Modifier.semantics {
+                                                toggleableState = ToggleableState(typingSettings.wrapSelection)
+                                            },
+                                            trailingIcon = {
+                                                Checkbox(checked = typingSettings.wrapSelection, onCheckedChange = null)
+                                            },
+                                            onClick = { typingSettings.chooseWrapSelection(!typingSettings.wrapSelection) },
+                                        )
                                         DropdownMenuItem(
                                             text = { Text("Continue Lists and Tables") },
                                             modifier = Modifier.semantics {
@@ -1211,6 +1246,12 @@ fun EditorScreen(viewModel: DocumentViewModel) {
                 WritingStats.words(viewModel.text) to viewModel.text.length
             }
             Column(Modifier.navigationBarsPadding().imePadding()) {
+                // The phone bar (#13): on a narrow window, while the editor is
+                // on screen and the keyboard is up.
+                if (!isWide && currentMode != Mode.PREVIEW && WindowInsets.ime.getBottom(LocalDensity.current) > 0) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    FormatBar(onFormat = ::format)
+                }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(
                     Modifier
@@ -1594,10 +1635,42 @@ private fun shortcutKey(key: Key): ShortcutKey? = when (key) {
     Key.One, Key.NumPad1 -> ShortcutKey.NUMBER_1
     Key.Two, Key.NumPad2 -> ShortcutKey.NUMBER_2
     Key.Three, Key.NumPad3 -> ShortcutKey.NUMBER_3
+    Key.Four, Key.NumPad4 -> ShortcutKey.NUMBER_4
+    Key.Five, Key.NumPad5 -> ShortcutKey.NUMBER_5
+    Key.Six, Key.NumPad6 -> ShortcutKey.NUMBER_6
+    Key.C -> ShortcutKey.C
+    Key.I -> ShortcutKey.I
+    Key.K -> ShortcutKey.K
+    Key.L -> ShortcutKey.L
+    Key.Q -> ShortcutKey.Q
+    Key.T -> ShortcutKey.T
+    Key.X -> ShortcutKey.X
+    Key.LeftBracket -> ShortcutKey.OPEN_BRACKET
+    Key.RightBracket -> ShortcutKey.CLOSE_BRACKET
     Key.DirectionUp -> ShortcutKey.UP
     Key.DirectionDown -> ShortcutKey.DOWN
     else -> null
 }
+
+/** The Format page's rows, in the Windows Format menu's order. */
+private val FORMAT_ROWS: List<Pair<String, FormatOp>> = listOf(
+    "Bold" to FormatOp.BOLD,
+    "Italic" to FormatOp.ITALIC,
+    "Code" to FormatOp.CODE,
+    "Strikethrough" to FormatOp.STRIKETHROUGH,
+    "Link" to FormatOp.LINK,
+    "Heading 1" to FormatOp.HEADING1,
+    "Heading 2" to FormatOp.HEADING2,
+    "Heading 3" to FormatOp.HEADING3,
+    "Heading 4" to FormatOp.HEADING4,
+    "Heading 5" to FormatOp.HEADING5,
+    "Heading 6" to FormatOp.HEADING6,
+    "Bullet List" to FormatOp.BULLET_LIST,
+    "Task List" to FormatOp.TASK_LIST,
+    "Quote" to FormatOp.QUOTE,
+    "Indent" to FormatOp.INDENT,
+    "Outdent" to FormatOp.OUTDENT,
+)
 
 /** The `.md` name Save As suggests: the document's name with its own
  *  extension — any of the ones md opens (`.mkd`, `.puml`, `.txt`, …), in any

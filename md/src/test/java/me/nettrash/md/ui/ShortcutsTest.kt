@@ -42,6 +42,22 @@ class ShortcutsTest {
         ShortcutAction.FIND to Chord(ShortcutKey.F, ctrl),
         ShortcutAction.PREVIOUS_ARTICLE to Chord(ShortcutKey.UP, ctrlAlt),
         ShortcutAction.NEXT_ARTICLE to Chord(ShortcutKey.DOWN, ctrlAlt),
+        ShortcutAction.BOLD to Chord(ShortcutKey.B, ctrl),
+        ShortcutAction.ITALIC to Chord(ShortcutKey.I, ctrl),
+        ShortcutAction.LINK to Chord(ShortcutKey.K, ctrl),
+        ShortcutAction.CODE to Chord(ShortcutKey.C, ctrlShift),
+        ShortcutAction.STRIKETHROUGH to Chord(ShortcutKey.X, ctrlShift),
+        ShortcutAction.HEADING_1 to Chord(ShortcutKey.NUMBER_1, ctrlAlt),
+        ShortcutAction.HEADING_2 to Chord(ShortcutKey.NUMBER_2, ctrlAlt),
+        ShortcutAction.HEADING_3 to Chord(ShortcutKey.NUMBER_3, ctrlAlt),
+        ShortcutAction.HEADING_4 to Chord(ShortcutKey.NUMBER_4, ctrlAlt),
+        ShortcutAction.HEADING_5 to Chord(ShortcutKey.NUMBER_5, ctrlAlt),
+        ShortcutAction.HEADING_6 to Chord(ShortcutKey.NUMBER_6, ctrlAlt),
+        ShortcutAction.BULLET_LIST to Chord(ShortcutKey.L, ctrlShift),
+        ShortcutAction.TASK_LIST to Chord(ShortcutKey.T, ctrlShift),
+        ShortcutAction.QUOTE to Chord(ShortcutKey.Q, ctrlShift),
+        ShortcutAction.INDENT to Chord(ShortcutKey.CLOSE_BRACKET, ctrl),
+        ShortcutAction.OUTDENT to Chord(ShortcutKey.OPEN_BRACKET, ctrl),
     )
 
     @Test fun everyChordIsTheWindowsTablesOwn() {
@@ -78,8 +94,15 @@ class ShortcutsTest {
         assertNull(Shortcuts.resolve(ShortcutKey.S, ctrl = true, shift = false, alt = true, isWide = true))
         assertNull(Shortcuts.resolve(ShortcutKey.S, ctrl = false, shift = false, alt = false, isWide = true))
 
-        // A bare Ctrl+B is not Show Book, and Ctrl+Shift+N is not New.
-        assertNull(Shortcuts.resolve(ShortcutKey.B, ctrl = true, shift = false, alt = false, isWide = true))
+        // A bare Ctrl+B is Bold, not Show Book, and Ctrl+Shift+N is not New.
+        assertEquals(ShortcutAction.BOLD, Shortcuts.resolve(ShortcutKey.B, ctrl = true, shift = false, alt = false, isWide = true))
+        assertEquals(ShortcutAction.SHOW_BOOK, Shortcuts.resolve(ShortcutKey.B, ctrl = true, shift = true, alt = false, isWide = true))
+        // Ctrl+1 is Edit, Ctrl+Alt+1 is Heading 1.
+        assertEquals(ShortcutAction.VIEW_EDIT, Shortcuts.resolve(ShortcutKey.NUMBER_1, ctrl = true, shift = false, alt = false, isWide = true))
+        assertEquals(ShortcutAction.HEADING_1, Shortcuts.resolve(ShortcutKey.NUMBER_1, ctrl = true, shift = false, alt = true, isWide = true))
+        // Ctrl+C and Ctrl+X stay copy and cut; only the Shift chords are md's.
+        assertNull(Shortcuts.resolve(ShortcutKey.C, ctrl = true, shift = false, alt = false, isWide = true))
+        assertNull(Shortcuts.resolve(ShortcutKey.X, ctrl = true, shift = false, alt = false, isWide = true))
         assertNull(Shortcuts.resolve(ShortcutKey.N, ctrl = true, shift = true, alt = false, isWide = true))
 
         // The arrows are only the article chords with BOTH Ctrl and Alt held;
@@ -100,10 +123,19 @@ class ShortcutsTest {
      * the keys they sit on are not even spellable — which is what keeps
      * select-all, undo, redo, cut, copy and paste working in the editor.
      */
+    @Test fun everyFormattingChordRunsItsCommand() {
+        val formatting = ShortcutAction.entries.filter { Shortcuts.formatOp(it) != null }
+        assertEquals(16, formatting.size)
+        assertEquals(ShortcutAction.entries.size - 12, formatting.size)
+    }
+
     @Test fun noChordClaimsAKeyTheTextFieldOwns() {
+        // Select all, undo, redo, cut, copy, paste: bare Ctrl on these keys is
+        // the field's. Code and Strikethrough sit on C and X with Shift held,
+        // which the field's key mapping does not use (only Ctrl+Shift+Z is).
         val owned = setOf("A", "Z", "Y", "X", "C", "V")
-        assertTrue(Shortcuts.table.values.none { it.key.name in owned })
-        assertTrue(ShortcutKey.entries.none { it.name in owned })
+        assertTrue(Shortcuts.table.values.none { it.key.name in owned && it.modifiers == ctrl })
+        assertTrue(Shortcuts.table.values.none { it.key.name == "Z" })
     }
 
     /**

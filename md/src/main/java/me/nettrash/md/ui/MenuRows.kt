@@ -34,7 +34,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
 /** The pages of the overflow menu: the main one, and the groups it drills into. */
-internal enum class MenuPage { MAIN, RECENT, EXAMPLES, SHARE, EXPORT, SVG, PAGE_SIZE, BOOK, TYPING }
+internal enum class MenuPage { MAIN, RECENT, EXAMPLES, SHARE, EXPORT, SVG, PAGE_SIZE, BOOK, FORMAT, TYPING }
 
 /** An action row. [icon] is optional so a row can sit under the one above it
  *  (Save As… under Save) without a second, near-identical glyph. */
